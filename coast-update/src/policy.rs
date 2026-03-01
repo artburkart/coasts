@@ -126,13 +126,25 @@ pub fn evaluate_policy(
 ) -> PolicyAction {
     let minimum = crate::version::parse_version(&policy.minimum_version).ok();
 
-    // If current version is below the minimum, always require update
+    // If current version is below the minimum, trigger the configured policy tier
     if let Some(ref min) = minimum {
         if current < min {
-            return PolicyAction::Required {
-                current: current.to_string(),
-                minimum: min.to_string(),
-                message: policy.message.clone(),
+            return match policy.policy {
+                PolicyTier::Nudge => PolicyAction::Nudge {
+                    current: current.to_string(),
+                    latest: min.to_string(),
+                    message: policy.message.clone(),
+                },
+                PolicyTier::Required => PolicyAction::Required {
+                    current: current.to_string(),
+                    minimum: min.to_string(),
+                    message: policy.message.clone(),
+                },
+                PolicyTier::Auto => PolicyAction::AutoUpdate {
+                    current: current.to_string(),
+                    latest: min.to_string(),
+                    message: policy.message.clone(),
+                },
             };
         }
     }
@@ -273,9 +285,32 @@ mod tests {
     }
 
     #[test]
-    fn test_evaluate_required_by_minimum_version() {
+    fn test_evaluate_nudge_below_minimum_version() {
         let policy = UpdatePolicy {
-            policy: PolicyTier::Nudge, // even nudge triggers Required if below minimum
+            policy: PolicyTier::Nudge,
+            minimum_version: "0.3.0".to_string(),
+            message: "Critical fix".to_string(),
+        };
+        let current = v("0.1.0");
+        let latest = v("0.3.0");
+        let action = evaluate_policy(&policy, &current, Some(&latest));
+        assert!(matches!(action, PolicyAction::Nudge { .. }));
+        if let PolicyAction::Nudge {
+            current: c,
+            latest: l,
+            message: m,
+        } = action
+        {
+            assert_eq!(c, "0.1.0");
+            assert_eq!(l, "0.3.0");
+            assert_eq!(m, "Critical fix");
+        }
+    }
+
+    #[test]
+    fn test_evaluate_required_below_minimum_version() {
+        let policy = UpdatePolicy {
+            policy: PolicyTier::Required,
             minimum_version: "0.3.0".to_string(),
             message: "Critical fix".to_string(),
         };
@@ -289,8 +324,30 @@ mod tests {
     }
 
     #[test]
-    fn test_evaluate_required_by_minimum_no_latest() {
-        // Even without knowing the latest, if below minimum, block
+    fn test_evaluate_auto_below_minimum_version() {
+        let policy = UpdatePolicy {
+            policy: PolicyTier::Auto,
+            minimum_version: "0.3.0".to_string(),
+            message: "Critical fix".to_string(),
+        };
+        let current = v("0.1.0");
+        let latest = v("0.3.0");
+        let action = evaluate_policy(&policy, &current, Some(&latest));
+        assert!(matches!(action, PolicyAction::AutoUpdate { .. }));
+        if let PolicyAction::AutoUpdate {
+            current: c,
+            latest: l,
+            ..
+        } = action
+        {
+            assert_eq!(c, "0.1.0");
+            assert_eq!(l, "0.3.0");
+        }
+    }
+
+    #[test]
+    fn test_evaluate_nudge_below_minimum_no_latest() {
+        // Without knowing the latest, if below minimum, still respect the policy tier
         let policy = UpdatePolicy {
             policy: PolicyTier::Nudge,
             minimum_version: "0.5.0".to_string(),
@@ -298,7 +355,7 @@ mod tests {
         };
         let current = v("0.1.0");
         let action = evaluate_policy(&policy, &current, None);
-        assert!(matches!(action, PolicyAction::Required { .. }));
+        assert!(matches!(action, PolicyAction::Nudge { .. }));
     }
 
     #[test]
