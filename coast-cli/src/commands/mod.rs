@@ -711,42 +711,100 @@ pub fn format_port_table(ports: &[PortMapping], subdomain_host: Option<&str>) ->
         return format!("  {}", t!("cli.info.no_port_mappings"));
     }
 
+    let service_width: usize = 22;
+    let canonical_width: usize = 15;
     let dynamic_width: usize = if subdomain_host.is_some() { 30 } else { 15 };
 
     let mut lines = Vec::new();
+    let service_header = "SERVICE".bold().to_string();
+    let canonical_header = "CANONICAL".bold().to_string();
+    let dynamic_header = "DYNAMIC".bold().to_string();
     lines.push(format!(
-        "  {:<22} {:<15} {:<width$}",
-        "SERVICE".bold(),
-        "CANONICAL".bold(),
-        "DYNAMIC".bold(),
-        width = dynamic_width,
+        "  {} {} {}",
+        pad_colored_visible(&service_header, "SERVICE".len(), service_width),
+        pad_colored_visible(&canonical_header, "CANONICAL".len(), canonical_width),
+        pad_plain_visible(&dynamic_header, dynamic_width),
     ));
 
     for port in ports {
-        let name = if port.is_primary {
-            format!("{} {}", "★".yellow(), port.logical_name)
+        let service_plain = if port.is_primary {
+            format!("★ {}", port.logical_name)
         } else {
             format!("  {}", port.logical_name)
         };
+        let service_display = if port.is_primary {
+            format!("{} {}", "★".yellow(), port.logical_name)
+        } else {
+            service_plain.clone()
+        };
+        let canonical_val = port.canonical_port.to_string();
         let dynamic_val = match subdomain_host {
             Some(host) => format!("{host}:{}", port.dynamic_port),
             None => port.dynamic_port.to_string(),
         };
         lines.push(format!(
-            "  {:<22} {:<15} {:<width$}",
-            name,
-            port.canonical_port,
-            dynamic_val,
-            width = dynamic_width,
+            "  {} {} {}",
+            pad_colored_visible(
+                &service_display,
+                service_plain.chars().count(),
+                service_width
+            ),
+            pad_plain_visible(&canonical_val, canonical_width),
+            pad_plain_visible(&dynamic_val, dynamic_width),
         ));
     }
 
     lines.join("\n")
 }
 
+/// Pad a plain string to a target width with trailing spaces.
+fn pad_plain_visible(s: &str, width: usize) -> String {
+    let visible_len = s.chars().count();
+    if visible_len >= width {
+        s.to_string()
+    } else {
+        format!("{s}{}", " ".repeat(width - visible_len))
+    }
+}
+
+/// Pad a colored string to a target visible width.
+fn pad_colored_visible(colored: &str, visible_len: usize, width: usize) -> String {
+    if visible_len >= width {
+        colored.to_string()
+    } else {
+        format!("{colored}{}", " ".repeat(width - visible_len))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use colored::control;
+
+    fn strip_ansi(s: &str) -> String {
+        let mut out = String::with_capacity(s.len());
+        let mut chars = s.chars().peekable();
+
+        while let Some(ch) = chars.next() {
+            if ch == '\u{1b}' && chars.peek() == Some(&'[') {
+                let _ = chars.next();
+                for c in chars.by_ref() {
+                    if c == 'm' {
+                        break;
+                    }
+                }
+                continue;
+            }
+            out.push(ch);
+        }
+
+        out
+    }
+
+    fn visible_column_index(haystack: &str, needle: &str) -> Option<usize> {
+        let byte_idx = haystack.find(needle)?;
+        Some(haystack[..byte_idx].chars().count())
+    }
 
     #[test]
     fn test_socket_path() {
@@ -868,5 +926,54 @@ mod tests {
         assert!(output.contains("web"));
         assert!(output.contains("api"));
         assert!(output.contains("postgres"));
+    }
+
+    #[test]
+    fn test_format_port_table_primary_row_alignment_with_color() {
+        control::set_override(true);
+
+        let ports = vec![
+            PortMapping {
+                logical_name: "backend".to_string(),
+                canonical_port: 8080,
+                dynamic_port: 52669,
+                is_primary: false,
+            },
+            PortMapping {
+                logical_name: "coasts-dev".to_string(),
+                canonical_port: 3000,
+                dynamic_port: 65061,
+                is_primary: true,
+            },
+        ];
+
+        let output = format_port_table(&ports, None);
+        control::set_override(false);
+
+        let lines: Vec<&str> = output.lines().collect();
+        let backend_line = lines
+            .iter()
+            .find(|line| line.contains("backend"))
+            .copied()
+            .expect("expected backend row");
+        let primary_line = lines
+            .iter()
+            .find(|line| line.contains("coasts-dev"))
+            .copied()
+            .expect("expected primary row");
+
+        assert!(
+            primary_line.contains("\u{1b}["),
+            "expected ANSI color codes in primary row: {primary_line:?}"
+        );
+
+        let backend_plain = strip_ansi(backend_line);
+        let primary_plain = strip_ansi(primary_line);
+
+        assert_eq!(
+            visible_column_index(&backend_plain, "8080"),
+            visible_column_index(&primary_plain, "3000"),
+            "canonical column should align for primary and non-primary rows"
+        );
     }
 }

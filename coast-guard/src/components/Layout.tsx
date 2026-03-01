@@ -47,7 +47,7 @@ export default function Layout() {
             )}
             {dockerInfo != null && !dockerInfo.connected && (
               <span
-                className="h-8 px-2.5 inline-flex items-center gap-2 rounded-lg text-xs text-red-400"
+                className="h-8 px-2.5 inline-flex items-center gap-2 rounded-lg text-xs text-white/60 dark:text-red-400"
                 title={t('docker.notRunning')}
               >
                 <DockerIcon size={18} />

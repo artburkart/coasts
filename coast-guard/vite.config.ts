@@ -9,6 +9,7 @@ logger.error = (msg, options) => {
   _origError(msg, options);
 };
 
+const apiHost = process.env.VITE_API_HOST || 'localhost';
 const apiPort = process.env.VITE_API_PORT || '31415';
 
 export default defineConfig({
@@ -18,7 +19,7 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': {
-        target: `http://localhost:${apiPort}`,
+        target: `http://${apiHost}:${apiPort}`,
         changeOrigin: true,
         ws: true,
         configure: (proxy) => {

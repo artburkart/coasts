@@ -140,8 +140,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_ui_fails_when_daemon_not_running() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::env::set_var("COAST_HOME", tmp.path());
         let args = UiArgs { port: None };
         let result = execute(&args).await;
+        std::env::remove_var("COAST_HOME");
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(
