@@ -1,5 +1,5 @@
 {
-  "policy": "auto",
-  "minimum_version": "0.1.6",
+  "policy": "nudge",
+  "minimum_version": "0.1.7",
   "message": ""
 }
