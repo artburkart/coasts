@@ -7,6 +7,7 @@ import type { ProjectName, InstanceName } from '../types/branded';
 import { api } from './endpoints';
 
 export const qk = {
+  updateCheck: () => ['updateCheck'] as const,
   instances: (project?: ProjectName) =>
     project != null ? (['instances', project] as const) : (['instances'] as const),
   projectGit: (project: ProjectName) => ['projectGit', project] as const,
@@ -58,6 +59,21 @@ export const qk = {
   mcpLocations: (project: string, name: string) =>
     ['mcpLocations', project, name] as const,
 } as const;
+
+export function useUpdateCheck() {
+  return useQuery({
+    queryKey: qk.updateCheck(),
+    queryFn: () => api.checkUpdate(),
+    refetchInterval: 3_600_000,
+    staleTime: 300_000,
+  });
+}
+
+export function useApplyUpdateMutation() {
+  return useMutation({
+    mutationFn: () => api.applyUpdate(),
+  });
+}
 
 export function useInstances(project?: ProjectName) {
   return useQuery({

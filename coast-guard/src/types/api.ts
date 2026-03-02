@@ -84,6 +84,8 @@ export type {
   VolumeSummaryResponse,
 
   OpenDockerSettingsResponse,
+  UpdateCheckResponse,
+  UpdateApplyResponse,
 } from './generated/index';
 
 // ---------------------------------------------------------------------------

@@ -433,6 +433,7 @@ dependencies = [
  "coast-docker",
  "coast-i18n",
  "coast-secrets",
+ "coast-update",
  "dirs",
  "futures-util",
  "hickory-proto",

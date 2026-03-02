@@ -9,6 +9,7 @@ pub mod project_git;
 pub mod secrets;
 pub mod services;
 pub mod settings;
+pub mod update;
 pub mod volumes;
 
 use std::sync::Arc;
@@ -48,6 +49,7 @@ pub fn router() -> Router<Arc<AppState>> {
         .merge(mcp::routes())
         .merge(config::routes())
         .merge(docker::routes())
+        .merge(update::routes())
         .merge(docs::routes())
 }
 

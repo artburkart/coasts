@@ -1,5 +1,7 @@
 import type { ProjectName, InstanceName } from '../types/branded';
 import type {
+  UpdateCheckResponse,
+  UpdateApplyResponse,
   LsResponse,
   StopResponse,
   StartResponse,
@@ -519,6 +521,14 @@ export const api = {
       '/docker/open-settings',
       {},
     );
+  },
+
+  checkUpdate(): Promise<UpdateCheckResponse> {
+    return get<UpdateCheckResponse>('/update/check');
+  },
+
+  applyUpdate(): Promise<UpdateApplyResponse> {
+    return post<Record<string, never>, UpdateApplyResponse>('/update/apply', {});
   },
 
   /** Fire-and-forget analytics event. */

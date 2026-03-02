@@ -474,6 +474,18 @@
   "mcp.locations.col.path": "Config Path",
   "mcp.error": "Failed to load MCP data: {{error}}",
 
+  "update.currentVersion": "v{{version}}",
+  "update.available": "Update to v{{version}}",
+  "update.confirmTitle": "Update coast to v{{version}}?",
+  "update.confirm": "Update",
+  "update.downloading": "Downloading...",
+  "update.installing": "Installing...",
+  "update.restarting": "Restarting...",
+  "update.reconnecting": "Reconnecting...",
+  "update.success": "Updated to v{{version}}",
+  "update.error": "Update failed: {{error}}",
+  "update.terminalFallback": "Update failed. Run `coast update apply` in your terminal.",
+
   "docker.label": "Docker",
   "docker.memoryTitle": "Open Docker Desktop — go to Settings → Resources to adjust memory",
   "docker.currentAllocation": "Current allocation",

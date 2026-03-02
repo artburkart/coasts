@@ -346,6 +346,23 @@ pub struct OpenDockerSettingsResponse {
     pub success: bool,
 }
 
+/// Update check info returned by GET /update/check.
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
+pub struct UpdateCheckResponse {
+    pub current_version: String,
+    pub latest_version: Option<String>,
+    pub update_available: bool,
+}
+
+/// Response after applying an update via POST /update/apply.
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
+pub struct UpdateApplyResponse {
+    pub success: bool,
+    pub version: String,
+}
+
 /// Client-to-server resize command (sent after 0x01 prefix byte).
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
