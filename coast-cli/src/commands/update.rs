@@ -61,6 +61,16 @@ async fn execute_check() -> Result<()> {
 }
 
 async fn execute_apply() -> Result<()> {
+    // Dev builds (coast-dev) set COAST_HOME; applying a production release
+    // tarball would overwrite the dev symlink with a binary that lacks the
+    // COAST_HOME override.
+    if std::env::var_os("COAST_HOME").is_some() {
+        anyhow::bail!(
+            "Self-update is disabled for dev builds. \
+             Rebuild from source with ./dev_setup.sh instead."
+        );
+    }
+
     println!("Checking for updates...");
 
     let latest = coast_update::checker::check_latest_version(coast_update::DOWNLOAD_TIMEOUT).await;

@@ -321,9 +321,14 @@ pub async fn run() -> Result<()> {
     };
     let cli = Cli::from_arg_matches(&matches)?;
 
-    // Pre-dispatch update policy check (skip for update commands themselves)
+    // Pre-dispatch update policy check (skip for update commands and dev builds).
+    // Dev binaries (coast-dev) set COAST_HOME before calling run(); production
+    // builds never set it.  Applying a production release tarball over a dev
+    // symlink would replace it with a binary that lacks the COAST_HOME override,
+    // breaking the dev setup.
     let is_update_cmd = matches!(cli.command, Commands::Update(_));
-    let policy_action = if is_update_cmd {
+    let is_dev_build = std::env::var_os("COAST_HOME").is_some();
+    let policy_action = if is_update_cmd || is_dev_build {
         None
     } else {
         tokio::time::timeout(
