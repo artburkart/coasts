@@ -8,6 +8,7 @@ use anyhow::Result;
 use clap::Args;
 use colored::Colorize;
 use std::io::{self, Write};
+use std::path::{Path, PathBuf};
 
 /// Arguments for `coast nuke`.
 #[derive(Debug, Args)]
@@ -81,7 +82,7 @@ pub async fn execute(args: &NukeArgs) -> Result<()> {
     // Step 6: Delete $COAST_HOME
     if coast_home.exists() {
         eprint!("  Deleting {} ...", home_display);
-        match std::fs::remove_dir_all(&coast_home) {
+        match wipe_home_contents(&coast_home) {
             Ok(()) => {
                 eprintln!(" {}", "done".green());
                 report.home_deleted = true;
@@ -300,6 +301,52 @@ async fn remove_images(docker: &bollard::Docker) -> usize {
     removed
 }
 
+/// Remove the contents of `$COAST_HOME`, preserving the directory that
+/// contains the running binary if it lives inside `$COAST_HOME`.
+fn wipe_home_contents(coast_home: &Path) -> std::io::Result<()> {
+    let preserve = bin_dir_inside(coast_home);
+
+    if preserve.is_none() {
+        return std::fs::remove_dir_all(coast_home);
+    }
+
+    for entry in std::fs::read_dir(coast_home)? {
+        let entry = entry?;
+        let path = entry.path();
+        if let Some(ref keep) = preserve {
+            if same_path(&path, keep) {
+                continue;
+            }
+        }
+        if path.is_dir() {
+            std::fs::remove_dir_all(&path)?;
+        } else {
+            std::fs::remove_file(&path)?;
+        }
+    }
+    Ok(())
+}
+
+/// If the current executable lives inside `coast_home`, return the
+/// immediate child directory of `coast_home` that contains it.
+fn bin_dir_inside(coast_home: &Path) -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?.canonicalize().ok()?;
+    let home = coast_home.canonicalize().ok()?;
+    if !exe.starts_with(&home) {
+        return None;
+    }
+    let relative = exe.strip_prefix(&home).ok()?;
+    let first = relative.components().next()?;
+    Some(home.join(first))
+}
+
+fn same_path(a: &Path, b: &Path) -> bool {
+    match (a.canonicalize(), b.canonicalize()) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => a == b,
+    }
+}
+
 fn print_report(report: &NukeReport) {
     eprintln!();
     if report.daemon_stopped {
@@ -452,5 +499,90 @@ mod tests {
                 if *expected { "" } else { "not " },
             );
         }
+    }
+
+    #[test]
+    fn test_wipe_home_deletes_all_when_no_binary_inside() {
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path().join("coast-home");
+        std::fs::create_dir_all(home.join("images").join("my-app")).unwrap();
+        std::fs::create_dir_all(home.join("image-cache")).unwrap();
+        std::fs::write(home.join("state.db"), b"fake").unwrap();
+        std::fs::write(home.join("keystore.db"), b"fake").unwrap();
+        std::fs::write(home.join("image-cache").join("test.tar"), b"cached").unwrap();
+
+        wipe_home_contents(&home).unwrap();
+
+        assert!(!home.exists(), "home dir should be fully removed");
+    }
+
+    #[test]
+    fn test_wipe_home_preserves_bin_dir() {
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path().join("coast-home");
+
+        // Create state that should be wiped
+        std::fs::create_dir_all(home.join("images").join("my-app")).unwrap();
+        std::fs::create_dir_all(home.join("image-cache")).unwrap();
+        std::fs::write(home.join("state.db"), b"fake").unwrap();
+        std::fs::write(home.join("keystore.db"), b"fake").unwrap();
+
+        // Create a bin/ dir that should be preserved
+        std::fs::create_dir_all(home.join("bin")).unwrap();
+        std::fs::write(home.join("bin").join("coast"), b"binary").unwrap();
+        std::fs::write(home.join("bin").join("coastd"), b"binary").unwrap();
+
+        // Since the running test binary is not inside `home`, bin_dir_inside
+        // returns None and the whole dir gets deleted. To test the preserve
+        // path we call the inner loop directly.
+        let keep = home.join("bin").canonicalize().unwrap();
+        for entry in std::fs::read_dir(&home).unwrap() {
+            let entry = entry.unwrap();
+            let path = entry.path();
+            if same_path(&path, &keep) {
+                continue;
+            }
+            if path.is_dir() {
+                std::fs::remove_dir_all(&path).unwrap();
+            } else {
+                std::fs::remove_file(&path).unwrap();
+            }
+        }
+
+        assert!(
+            home.join("bin").join("coast").exists(),
+            "bin/coast preserved"
+        );
+        assert!(
+            home.join("bin").join("coastd").exists(),
+            "bin/coastd preserved"
+        );
+        assert!(!home.join("state.db").exists(), "state.db wiped");
+        assert!(!home.join("keystore.db").exists(), "keystore.db wiped");
+        assert!(!home.join("images").exists(), "images/ wiped");
+        assert!(!home.join("image-cache").exists(), "image-cache/ wiped");
+    }
+
+    #[test]
+    fn test_bin_dir_inside_returns_none_for_external_exe() {
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path().join("coast-home");
+        std::fs::create_dir_all(&home).unwrap();
+
+        // The test binary itself lives outside `home`, so this should be None.
+        assert!(
+            bin_dir_inside(&home).is_none(),
+            "bin_dir_inside should return None when exe is outside coast_home"
+        );
+    }
+
+    #[test]
+    fn test_same_path_basic() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("a");
+        std::fs::create_dir_all(&dir).unwrap();
+
+        assert!(same_path(&dir, &dir));
+        assert!(!same_path(&dir, &tmp.path().join("b")));
     }
 }
