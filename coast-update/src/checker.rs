@@ -78,6 +78,9 @@ pub fn write_cache(latest_version: &str) -> Result<(), UpdateError> {
 ///
 /// Uses the cache if available and fresh. Falls back to the GitHub API.
 /// Returns `None` if the check fails (network errors are not fatal).
+/// Also verifies that the release assets are actually downloadable —
+/// GitHub's `/releases/latest` can return a version before its assets
+/// finish uploading, which would cause a 404 during download.
 pub async fn check_latest_version(timeout: Duration) -> Option<Version> {
     // Try cache first
     if let Some(cached) = read_cache() {
@@ -86,6 +89,11 @@ pub async fn check_latest_version(timeout: Duration) -> Option<Version> {
 
     // Fetch from GitHub
     let version = fetch_latest_from_github(timeout).await.ok()?;
+
+    // Verify the tarball for this platform is actually downloadable
+    if !verify_assets_available(&version, timeout).await {
+        return None;
+    }
 
     // Cache the result (best-effort)
     let _ = write_cache(&version.to_string());
@@ -120,6 +128,29 @@ async fn fetch_latest_from_github(timeout: Duration) -> Result<Version, UpdateEr
         .map_err(|e| UpdateError::CheckFailed(e.to_string()))?;
 
     parse_version(&release.tag_name)
+}
+
+/// Verify that the release tarball for the current platform is downloadable.
+/// Uses a HEAD request to avoid downloading the full tarball.
+async fn verify_assets_available(version: &Version, timeout: Duration) -> bool {
+    let (os, arch) = crate::updater::current_platform();
+    let url = release_tarball_url(version, os, arch);
+
+    let client = reqwest::Client::builder()
+        .timeout(timeout)
+        .user_agent("coast-cli")
+        .redirect(reqwest::redirect::Policy::none())
+        .build();
+
+    let Ok(client) = client else {
+        return false;
+    };
+
+    // GitHub returns a 302 redirect for valid assets
+    match client.head(&url).send().await {
+        Ok(resp) => resp.status().is_success() || resp.status().is_redirection(),
+        Err(_) => false,
+    }
 }
 
 /// Return the download URL for a specific version and platform.
