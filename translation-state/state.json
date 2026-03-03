@@ -1,9 +1,9 @@
 {
   "es": {
     "GETTING_STARTED.md": {
-      "commit": "0f69cdc",
-      "source_sha256": "fb86f0b19973d0fd122fb2826b4a88e99d689aa46fe702fcb71748b00ad013ca",
-      "translated_at": "2026-03-02T07:44:45Z"
+      "commit": "d769707",
+      "source_sha256": "34daa0a26c7332b06ef922bea0520e6ac0cf59ee56c709b74bc7884cdf2cb8a2",
+      "translated_at": "2026-03-03T10:27:08Z"
     },
     "README.md": {
       "commit": "0f69cdc",
@@ -11,9 +11,9 @@
       "translated_at": "2026-03-02T07:44:45Z"
     },
     "SKILLS_FOR_HOST_AGENTS.md": {
-      "commit": "0f69cdc",
-      "source_sha256": "0178db058620f490f2d76f5c94b4a61442b27e8934c597fe7f074bd2439ffc2b",
-      "translated_at": "2026-03-02T07:44:45Z"
+      "commit": "d769707",
+      "source_sha256": "7d8b1be5d672cac5cf4cf227eccb53f9f55ff8dff8c7784342b2a25d1712a304",
+      "translated_at": "2026-03-03T10:27:08Z"
     },
     "coastfiles/AGENT_SHELL.md": {
       "commit": "3357381",
@@ -86,9 +86,9 @@
       "translated_at": "2026-02-28T13:10:06Z"
     },
     "concepts_and_terminology/BARE_SERVICES.md": {
-      "commit": "3357381",
-      "source_sha256": "d07722d02ee02a50db4262e44f2080250d43cde946af585907e1380de8490ff8",
-      "translated_at": "2026-02-28T13:10:06Z"
+      "commit": "d769707",
+      "source_sha256": "51e6dc213d509ecec8a1336305a7590141a66c01ac7d2a2d61b681dd8f897171",
+      "translated_at": "2026-03-03T10:27:08Z"
     },
     "concepts_and_terminology/BUILDS.md": {
       "commit": "3357381",
@@ -150,6 +150,11 @@
       "source_sha256": "b41e54f3b7025745cd44d827e7d2cdddb8265cf026888acd3460c64ff2f988c6",
       "translated_at": "2026-02-28T13:10:06Z"
     },
+    "concepts_and_terminology/MIXED_SERVICE_TYPES.md": {
+      "commit": "d769707",
+      "source_sha256": "ae92d9aac5183e129faa53c8b553941aae9a7c34d0f91e8d4a18ad2abae7d0ba",
+      "translated_at": "2026-03-03T10:27:08Z"
+    },
     "concepts_and_terminology/PORTS.md": {
       "commit": "3357381",
       "source_sha256": "7fc365f5c1374f68e038d0ad8d192bc43a243aa8182835ef6531bfe81c6dc7d3",
@@ -191,9 +196,9 @@
       "translated_at": "2026-02-28T13:10:06Z"
     },
     "doc_ordering.txt": {
-      "commit": "0f69cdc",
-      "source_sha256": "f5f413dd11da30f28fd8e8f514f5db8576541bd35b67eac0677d9a800a096a59",
-      "translated_at": "2026-03-02T07:44:45Z"
+      "commit": "d769707",
+      "source_sha256": "c5520f6e226188bd7d296e0d92fcc710eb2b23355eb03b5c6312fd32f66b1a1b",
+      "translated_at": "2026-03-03T10:27:08Z"
     },
     "installation_prompt.txt": {
       "commit": "3357381",
@@ -208,9 +213,9 @@
   },
   "ja": {
     "GETTING_STARTED.md": {
-      "commit": "0f69cdc",
-      "source_sha256": "fb86f0b19973d0fd122fb2826b4a88e99d689aa46fe702fcb71748b00ad013ca",
-      "translated_at": "2026-03-02T07:39:42Z"
+      "commit": "d769707",
+      "source_sha256": "34daa0a26c7332b06ef922bea0520e6ac0cf59ee56c709b74bc7884cdf2cb8a2",
+      "translated_at": "2026-03-03T10:23:05Z"
     },
     "README.md": {
       "commit": "0f69cdc",
@@ -218,9 +223,9 @@
       "translated_at": "2026-03-02T07:39:42Z"
     },
     "SKILLS_FOR_HOST_AGENTS.md": {
-      "commit": "0f69cdc",
-      "source_sha256": "0178db058620f490f2d76f5c94b4a61442b27e8934c597fe7f074bd2439ffc2b",
-      "translated_at": "2026-03-02T07:39:42Z"
+      "commit": "d769707",
+      "source_sha256": "7d8b1be5d672cac5cf4cf227eccb53f9f55ff8dff8c7784342b2a25d1712a304",
+      "translated_at": "2026-03-03T10:23:05Z"
     },
     "coastfiles/AGENT_SHELL.md": {
       "commit": "3357381",
@@ -293,9 +298,9 @@
       "translated_at": "2026-02-28T12:45:25Z"
     },
     "concepts_and_terminology/BARE_SERVICES.md": {
-      "commit": "3357381",
-      "source_sha256": "d07722d02ee02a50db4262e44f2080250d43cde946af585907e1380de8490ff8",
-      "translated_at": "2026-02-28T12:45:25Z"
+      "commit": "d769707",
+      "source_sha256": "51e6dc213d509ecec8a1336305a7590141a66c01ac7d2a2d61b681dd8f897171",
+      "translated_at": "2026-03-03T10:23:05Z"
     },
     "concepts_and_terminology/BUILDS.md": {
       "commit": "3357381",
@@ -357,6 +362,11 @@
       "source_sha256": "b41e54f3b7025745cd44d827e7d2cdddb8265cf026888acd3460c64ff2f988c6",
       "translated_at": "2026-02-28T12:45:25Z"
     },
+    "concepts_and_terminology/MIXED_SERVICE_TYPES.md": {
+      "commit": "d769707",
+      "source_sha256": "ae92d9aac5183e129faa53c8b553941aae9a7c34d0f91e8d4a18ad2abae7d0ba",
+      "translated_at": "2026-03-03T10:23:05Z"
+    },
     "concepts_and_terminology/PORTS.md": {
       "commit": "3357381",
       "source_sha256": "7fc365f5c1374f68e038d0ad8d192bc43a243aa8182835ef6531bfe81c6dc7d3",
@@ -398,9 +408,9 @@
       "translated_at": "2026-02-28T12:45:25Z"
     },
     "doc_ordering.txt": {
-      "commit": "0f69cdc",
-      "source_sha256": "f5f413dd11da30f28fd8e8f514f5db8576541bd35b67eac0677d9a800a096a59",
-      "translated_at": "2026-03-02T07:39:42Z"
+      "commit": "d769707",
+      "source_sha256": "c5520f6e226188bd7d296e0d92fcc710eb2b23355eb03b5c6312fd32f66b1a1b",
+      "translated_at": "2026-03-03T10:23:05Z"
     },
     "installation_prompt.txt": {
       "commit": "3357381",
@@ -415,9 +425,9 @@
   },
   "ko": {
     "GETTING_STARTED.md": {
-      "commit": "0f69cdc",
-      "source_sha256": "fb86f0b19973d0fd122fb2826b4a88e99d689aa46fe702fcb71748b00ad013ca",
-      "translated_at": "2026-03-02T07:41:07Z"
+      "commit": "d769707",
+      "source_sha256": "34daa0a26c7332b06ef922bea0520e6ac0cf59ee56c709b74bc7884cdf2cb8a2",
+      "translated_at": "2026-03-03T10:24:11Z"
     },
     "README.md": {
       "commit": "0f69cdc",
@@ -425,9 +435,9 @@
       "translated_at": "2026-03-02T07:41:07Z"
     },
     "SKILLS_FOR_HOST_AGENTS.md": {
-      "commit": "0f69cdc",
-      "source_sha256": "0178db058620f490f2d76f5c94b4a61442b27e8934c597fe7f074bd2439ffc2b",
-      "translated_at": "2026-03-02T07:41:07Z"
+      "commit": "d769707",
+      "source_sha256": "7d8b1be5d672cac5cf4cf227eccb53f9f55ff8dff8c7784342b2a25d1712a304",
+      "translated_at": "2026-03-03T10:24:11Z"
     },
     "coastfiles/AGENT_SHELL.md": {
       "commit": "3357381",
@@ -500,9 +510,9 @@
       "translated_at": "2026-02-28T12:52:18Z"
     },
     "concepts_and_terminology/BARE_SERVICES.md": {
-      "commit": "3357381",
-      "source_sha256": "d07722d02ee02a50db4262e44f2080250d43cde946af585907e1380de8490ff8",
-      "translated_at": "2026-02-28T12:52:18Z"
+      "commit": "d769707",
+      "source_sha256": "51e6dc213d509ecec8a1336305a7590141a66c01ac7d2a2d61b681dd8f897171",
+      "translated_at": "2026-03-03T10:24:11Z"
     },
     "concepts_and_terminology/BUILDS.md": {
       "commit": "3357381",
@@ -564,6 +574,11 @@
       "source_sha256": "b41e54f3b7025745cd44d827e7d2cdddb8265cf026888acd3460c64ff2f988c6",
       "translated_at": "2026-02-28T12:52:18Z"
     },
+    "concepts_and_terminology/MIXED_SERVICE_TYPES.md": {
+      "commit": "d769707",
+      "source_sha256": "ae92d9aac5183e129faa53c8b553941aae9a7c34d0f91e8d4a18ad2abae7d0ba",
+      "translated_at": "2026-03-03T10:24:11Z"
+    },
     "concepts_and_terminology/PORTS.md": {
       "commit": "3357381",
       "source_sha256": "7fc365f5c1374f68e038d0ad8d192bc43a243aa8182835ef6531bfe81c6dc7d3",
@@ -605,9 +620,9 @@
       "translated_at": "2026-02-28T12:52:18Z"
     },
     "doc_ordering.txt": {
-      "commit": "0f69cdc",
-      "source_sha256": "f5f413dd11da30f28fd8e8f514f5db8576541bd35b67eac0677d9a800a096a59",
-      "translated_at": "2026-03-02T07:41:07Z"
+      "commit": "d769707",
+      "source_sha256": "c5520f6e226188bd7d296e0d92fcc710eb2b23355eb03b5c6312fd32f66b1a1b",
+      "translated_at": "2026-03-03T10:24:11Z"
     },
     "installation_prompt.txt": {
       "commit": "3357381",
@@ -622,9 +637,9 @@
   },
   "pt": {
     "GETTING_STARTED.md": {
-      "commit": "0f69cdc",
-      "source_sha256": "fb86f0b19973d0fd122fb2826b4a88e99d689aa46fe702fcb71748b00ad013ca",
-      "translated_at": "2026-03-02T07:43:40Z"
+      "commit": "d769707",
+      "source_sha256": "34daa0a26c7332b06ef922bea0520e6ac0cf59ee56c709b74bc7884cdf2cb8a2",
+      "translated_at": "2026-03-03T10:26:12Z"
     },
     "README.md": {
       "commit": "0f69cdc",
@@ -632,9 +647,9 @@
       "translated_at": "2026-03-02T07:43:40Z"
     },
     "SKILLS_FOR_HOST_AGENTS.md": {
-      "commit": "0f69cdc",
-      "source_sha256": "0178db058620f490f2d76f5c94b4a61442b27e8934c597fe7f074bd2439ffc2b",
-      "translated_at": "2026-03-02T07:43:40Z"
+      "commit": "d769707",
+      "source_sha256": "7d8b1be5d672cac5cf4cf227eccb53f9f55ff8dff8c7784342b2a25d1712a304",
+      "translated_at": "2026-03-03T10:26:12Z"
     },
     "coastfiles/AGENT_SHELL.md": {
       "commit": "3357381",
@@ -707,9 +722,9 @@
       "translated_at": "2026-02-28T13:04:30Z"
     },
     "concepts_and_terminology/BARE_SERVICES.md": {
-      "commit": "3357381",
-      "source_sha256": "d07722d02ee02a50db4262e44f2080250d43cde946af585907e1380de8490ff8",
-      "translated_at": "2026-02-28T13:04:30Z"
+      "commit": "d769707",
+      "source_sha256": "51e6dc213d509ecec8a1336305a7590141a66c01ac7d2a2d61b681dd8f897171",
+      "translated_at": "2026-03-03T10:26:12Z"
     },
     "concepts_and_terminology/BUILDS.md": {
       "commit": "3357381",
@@ -771,6 +786,11 @@
       "source_sha256": "b41e54f3b7025745cd44d827e7d2cdddb8265cf026888acd3460c64ff2f988c6",
       "translated_at": "2026-02-28T13:04:30Z"
     },
+    "concepts_and_terminology/MIXED_SERVICE_TYPES.md": {
+      "commit": "d769707",
+      "source_sha256": "ae92d9aac5183e129faa53c8b553941aae9a7c34d0f91e8d4a18ad2abae7d0ba",
+      "translated_at": "2026-03-03T10:26:12Z"
+    },
     "concepts_and_terminology/PORTS.md": {
       "commit": "3357381",
       "source_sha256": "7fc365f5c1374f68e038d0ad8d192bc43a243aa8182835ef6531bfe81c6dc7d3",
@@ -812,9 +832,9 @@
       "translated_at": "2026-02-28T13:04:30Z"
     },
     "doc_ordering.txt": {
-      "commit": "0f69cdc",
-      "source_sha256": "f5f413dd11da30f28fd8e8f514f5db8576541bd35b67eac0677d9a800a096a59",
-      "translated_at": "2026-03-02T07:43:40Z"
+      "commit": "d769707",
+      "source_sha256": "c5520f6e226188bd7d296e0d92fcc710eb2b23355eb03b5c6312fd32f66b1a1b",
+      "translated_at": "2026-03-03T10:26:12Z"
     },
     "installation_prompt.txt": {
       "commit": "3357381",
@@ -829,9 +849,9 @@
   },
   "ru": {
     "GETTING_STARTED.md": {
-      "commit": "0f69cdc",
-      "source_sha256": "fb86f0b19973d0fd122fb2826b4a88e99d689aa46fe702fcb71748b00ad013ca",
-      "translated_at": "2026-03-02T07:42:26Z"
+      "commit": "d769707",
+      "source_sha256": "34daa0a26c7332b06ef922bea0520e6ac0cf59ee56c709b74bc7884cdf2cb8a2",
+      "translated_at": "2026-03-03T10:25:12Z"
     },
     "README.md": {
       "commit": "0f69cdc",
@@ -839,9 +859,9 @@
       "translated_at": "2026-03-02T07:42:26Z"
     },
     "SKILLS_FOR_HOST_AGENTS.md": {
-      "commit": "0f69cdc",
-      "source_sha256": "0178db058620f490f2d76f5c94b4a61442b27e8934c597fe7f074bd2439ffc2b",
-      "translated_at": "2026-03-02T07:42:26Z"
+      "commit": "d769707",
+      "source_sha256": "7d8b1be5d672cac5cf4cf227eccb53f9f55ff8dff8c7784342b2a25d1712a304",
+      "translated_at": "2026-03-03T10:25:12Z"
     },
     "coastfiles/AGENT_SHELL.md": {
       "commit": "3357381",
@@ -914,9 +934,9 @@
       "translated_at": "2026-02-28T12:58:35Z"
     },
     "concepts_and_terminology/BARE_SERVICES.md": {
-      "commit": "3357381",
-      "source_sha256": "d07722d02ee02a50db4262e44f2080250d43cde946af585907e1380de8490ff8",
-      "translated_at": "2026-02-28T12:58:35Z"
+      "commit": "d769707",
+      "source_sha256": "51e6dc213d509ecec8a1336305a7590141a66c01ac7d2a2d61b681dd8f897171",
+      "translated_at": "2026-03-03T10:25:12Z"
     },
     "concepts_and_terminology/BUILDS.md": {
       "commit": "3357381",
@@ -978,6 +998,11 @@
       "source_sha256": "b41e54f3b7025745cd44d827e7d2cdddb8265cf026888acd3460c64ff2f988c6",
       "translated_at": "2026-02-28T12:58:35Z"
     },
+    "concepts_and_terminology/MIXED_SERVICE_TYPES.md": {
+      "commit": "d769707",
+      "source_sha256": "ae92d9aac5183e129faa53c8b553941aae9a7c34d0f91e8d4a18ad2abae7d0ba",
+      "translated_at": "2026-03-03T10:25:12Z"
+    },
     "concepts_and_terminology/PORTS.md": {
       "commit": "3357381",
       "source_sha256": "7fc365f5c1374f68e038d0ad8d192bc43a243aa8182835ef6531bfe81c6dc7d3",
@@ -1019,9 +1044,9 @@
       "translated_at": "2026-02-28T12:58:35Z"
     },
     "doc_ordering.txt": {
-      "commit": "0f69cdc",
-      "source_sha256": "f5f413dd11da30f28fd8e8f514f5db8576541bd35b67eac0677d9a800a096a59",
-      "translated_at": "2026-03-02T07:42:26Z"
+      "commit": "d769707",
+      "source_sha256": "c5520f6e226188bd7d296e0d92fcc710eb2b23355eb03b5c6312fd32f66b1a1b",
+      "translated_at": "2026-03-03T10:25:12Z"
     },
     "installation_prompt.txt": {
       "commit": "3357381",
@@ -1036,9 +1061,9 @@
   },
   "zh": {
     "GETTING_STARTED.md": {
-      "commit": "0f69cdc",
-      "source_sha256": "fb86f0b19973d0fd122fb2826b4a88e99d689aa46fe702fcb71748b00ad013ca",
-      "translated_at": "2026-03-02T07:38:29Z"
+      "commit": "d769707",
+      "source_sha256": "34daa0a26c7332b06ef922bea0520e6ac0cf59ee56c709b74bc7884cdf2cb8a2",
+      "translated_at": "2026-03-03T10:22:04Z"
     },
     "README.md": {
       "commit": "0f69cdc",
@@ -1046,9 +1071,9 @@
       "translated_at": "2026-03-02T07:38:29Z"
     },
     "SKILLS_FOR_HOST_AGENTS.md": {
-      "commit": "0f69cdc",
-      "source_sha256": "0178db058620f490f2d76f5c94b4a61442b27e8934c597fe7f074bd2439ffc2b",
-      "translated_at": "2026-03-02T07:38:29Z"
+      "commit": "d769707",
+      "source_sha256": "7d8b1be5d672cac5cf4cf227eccb53f9f55ff8dff8c7784342b2a25d1712a304",
+      "translated_at": "2026-03-03T10:22:04Z"
     },
     "coastfiles/AGENT_SHELL.md": {
       "commit": "3357381",
@@ -1121,9 +1146,9 @@
       "translated_at": "2026-02-28T12:39:25Z"
     },
     "concepts_and_terminology/BARE_SERVICES.md": {
-      "commit": "3357381",
-      "source_sha256": "d07722d02ee02a50db4262e44f2080250d43cde946af585907e1380de8490ff8",
-      "translated_at": "2026-02-28T12:39:25Z"
+      "commit": "d769707",
+      "source_sha256": "51e6dc213d509ecec8a1336305a7590141a66c01ac7d2a2d61b681dd8f897171",
+      "translated_at": "2026-03-03T10:22:04Z"
     },
     "concepts_and_terminology/BUILDS.md": {
       "commit": "3357381",
@@ -1185,6 +1210,11 @@
       "source_sha256": "b41e54f3b7025745cd44d827e7d2cdddb8265cf026888acd3460c64ff2f988c6",
       "translated_at": "2026-02-28T12:39:25Z"
     },
+    "concepts_and_terminology/MIXED_SERVICE_TYPES.md": {
+      "commit": "d769707",
+      "source_sha256": "ae92d9aac5183e129faa53c8b553941aae9a7c34d0f91e8d4a18ad2abae7d0ba",
+      "translated_at": "2026-03-03T10:22:04Z"
+    },
     "concepts_and_terminology/PORTS.md": {
       "commit": "3357381",
       "source_sha256": "7fc365f5c1374f68e038d0ad8d192bc43a243aa8182835ef6531bfe81c6dc7d3",
@@ -1226,9 +1256,9 @@
       "translated_at": "2026-02-28T12:39:25Z"
     },
     "doc_ordering.txt": {
-      "commit": "0f69cdc",
-      "source_sha256": "f5f413dd11da30f28fd8e8f514f5db8576541bd35b67eac0677d9a800a096a59",
-      "translated_at": "2026-03-02T07:38:29Z"
+      "commit": "d769707",
+      "source_sha256": "c5520f6e226188bd7d296e0d92fcc710eb2b23355eb03b5c6312fd32f66b1a1b",
+      "translated_at": "2026-03-03T10:22:04Z"
     },
     "installation_prompt.txt": {
       "commit": "3357381",

@@ -66,7 +66,34 @@ async fn resolve_logs_target(
     Ok((cid, instance.build_id.clone()))
 }
 
+/// Check if a specific service is a bare service by testing for its log file.
+async fn is_service_bare(docker: &bollard::Docker, container_id: &str, service: &str) -> bool {
+    let runtime = coast_docker::dind::DindRuntime::with_client(docker.clone());
+    let log_path = format!("{}/{}.log", crate::bare_services::LOG_DIR, service);
+    runtime
+        .exec_in_coast(container_id, &["test", "-f", &log_path])
+        .await
+        .map(|r| r.success())
+        .unwrap_or(false)
+}
+
+/// Build the command for fetching compose logs.
+fn compose_logs_cmd(req: &LogsRequest, build_id: Option<&str>) -> Vec<String> {
+    let tail_arg = resolve_tail_arg(req);
+    let mut subcmd_parts = vec!["logs".to_string(), "--tail".to_string(), tail_arg];
+    if req.follow {
+        subcmd_parts.push("--follow".to_string());
+    }
+    if let Some(ref service) = req.service {
+        subcmd_parts.push(service.clone());
+    }
+    let subcmd = subcmd_parts.join(" ");
+    let ctx = compose_context_for_build(&req.project, build_id);
+    ctx.compose_shell(&subcmd)
+}
+
 /// Handle a logs request.
+#[allow(clippy::cognitive_complexity)]
 pub async fn handle(req: LogsRequest, state: &AppState) -> Result<LogsResponse> {
     info!(
         name = %req.name,
@@ -86,32 +113,75 @@ pub async fn handle(req: LogsRequest, state: &AppState) -> Result<LogsResponse> 
         CoastError::docker("Docker is not available. Ensure Docker is running and restart coastd.")
     })?;
 
-    let is_bare = crate::bare_services::has_bare_services(docker, &container_id).await;
+    let has_bare = crate::bare_services::has_bare_services(docker, &container_id).await;
+    let has_compose = super::assign::has_compose(&req.project);
 
-    let cmd_parts = if is_bare {
+    let runtime = coast_docker::dind::DindRuntime::with_client(docker.clone());
+
+    if let Some(ref service) = req.service {
+        if has_bare && has_compose {
+            let svc_is_bare = is_service_bare(docker, &container_id, service).await;
+            let cmd_parts = if svc_is_bare {
+                let tail_cmd = crate::bare_services::generate_logs_command(
+                    Some(service.as_str()),
+                    req.tail,
+                    req.tail_all,
+                    req.follow,
+                );
+                vec!["sh".to_string(), "-c".to_string(), tail_cmd]
+            } else {
+                compose_logs_cmd(&req, build_id.as_deref())
+            };
+            let cmd_refs: Vec<&str> = cmd_parts.iter().map(std::string::String::as_str).collect();
+            let exec_result = runtime
+                .exec_in_coast(&container_id, &cmd_refs)
+                .await
+                .map_err(|e| {
+                    CoastError::docker(format!(
+                        "Failed to retrieve logs for instance '{}': {}",
+                        req.name, e
+                    ))
+                })?;
+            let output = if exec_result.stdout.is_empty() {
+                exec_result.stderr.clone()
+            } else {
+                exec_result.stdout.clone()
+            };
+            return Ok(LogsResponse { output });
+        }
+    }
+
+    if has_bare && !has_compose {
         let tail_cmd = crate::bare_services::generate_logs_command(
             req.service.as_deref(),
             req.tail,
             req.tail_all,
             req.follow,
         );
-        vec!["sh".to_string(), "-c".to_string(), tail_cmd]
-    } else {
-        let tail_arg = resolve_tail_arg(&req);
-        let mut subcmd_parts = vec!["logs".to_string(), "--tail".to_string(), tail_arg];
-        if req.follow {
-            subcmd_parts.push("--follow".to_string());
-        }
-        if let Some(ref service) = req.service {
-            subcmd_parts.push(service.clone());
-        }
-        let subcmd = subcmd_parts.join(" ");
-        let ctx = compose_context_for_build(&req.project, build_id.as_deref());
-        ctx.compose_shell(&subcmd)
-    };
-    let cmd_refs: Vec<&str> = cmd_parts.iter().map(std::string::String::as_str).collect();
+        let cmd_parts = ["sh".to_string(), "-c".to_string(), tail_cmd];
+        let cmd_refs: Vec<&str> = cmd_parts.iter().map(std::string::String::as_str).collect();
+        let exec_result = runtime
+            .exec_in_coast(&container_id, &cmd_refs)
+            .await
+            .map_err(|e| {
+                CoastError::docker(format!(
+                    "Failed to retrieve logs for instance '{}': {}",
+                    req.name, e
+                ))
+            })?;
+        let output = if exec_result.stdout.is_empty() {
+            exec_result.stderr.clone()
+        } else {
+            exec_result.stdout.clone()
+        };
+        return Ok(LogsResponse { output });
+    }
 
-    let runtime = coast_docker::dind::DindRuntime::with_client(docker.clone());
+    let compose_cmd = compose_logs_cmd(&req, build_id.as_deref());
+    let cmd_refs: Vec<&str> = compose_cmd
+        .iter()
+        .map(std::string::String::as_str)
+        .collect();
     let exec_result = runtime
         .exec_in_coast(&container_id, &cmd_refs)
         .await
@@ -121,19 +191,31 @@ pub async fn handle(req: LogsRequest, state: &AppState) -> Result<LogsResponse> 
                 req.name, e
             ))
         })?;
-
-    if !exec_result.success() {
-        return Err(CoastError::docker(format!(
-            "logs command failed in instance '{}' (exit code {}): {}",
-            req.name, exec_result.exit_code, exec_result.stderr
-        )));
-    }
-
-    let output = if exec_result.stdout.is_empty() {
+    let mut output = if exec_result.stdout.is_empty() {
         exec_result.stderr.clone()
     } else {
         exec_result.stdout.clone()
     };
+
+    if has_bare && req.service.is_none() && !req.follow {
+        let tail_cmd =
+            crate::bare_services::generate_logs_command(None, req.tail, req.tail_all, false);
+        let bare_parts = ["sh".to_string(), "-c".to_string(), tail_cmd];
+        let bare_refs: Vec<&str> = bare_parts.iter().map(std::string::String::as_str).collect();
+        if let Ok(bare_result) = runtime.exec_in_coast(&container_id, &bare_refs).await {
+            let bare_output = if bare_result.stdout.is_empty() {
+                &bare_result.stderr
+            } else {
+                &bare_result.stdout
+            };
+            if !bare_output.is_empty() {
+                if !output.is_empty() && !output.ends_with('\n') {
+                    output.push('\n');
+                }
+                output.push_str(bare_output);
+            }
+        }
+    }
 
     info!(
         name = %req.name,
@@ -170,9 +252,21 @@ pub async fn handle_with_progress(
         CoastError::docker("Docker is not available. Ensure Docker is running and restart coastd.")
     })?;
 
-    let is_bare = crate::bare_services::has_bare_services(docker, &container_id).await;
+    let has_bare = crate::bare_services::has_bare_services(docker, &container_id).await;
+    let has_compose = super::assign::has_compose(&req.project);
 
-    let cmd_parts = if is_bare {
+    // In mixed mode with a service filter, route to the right log source
+    let use_bare = if has_bare && has_compose {
+        if let Some(ref service) = req.service {
+            is_service_bare(docker, &container_id, service).await
+        } else {
+            false
+        }
+    } else {
+        has_bare && !has_compose
+    };
+
+    let cmd_parts = if use_bare {
         let tail_cmd = crate::bare_services::generate_logs_command(
             req.service.as_deref(),
             req.tail,

@@ -87,7 +87,7 @@ find the relevant documentation.
 
 Самый быстрый способ — позволить агенту настроить себя самостоятельно. Запустите одну из этих команд из директории вашего проекта:
 
-```sh
+```bash-emphasis
 # Claude Code
 claude -p "$(coast skills-prompt)"
 
@@ -96,6 +96,10 @@ codex "$(coast skills-prompt)"
 
 # Cursor (from terminal)
 cursor --chat "$(coast skills-prompt)"
+
+# Other agents (manual)
+coast skills-prompt
+# copy the output into your agent's system prompt
 ```
 
 Это даст агенту текст навыка и инструкции записать его в собственный конфигурационный файл (`CLAUDE.md`, `AGENTS.md`, `.cursor/rules/coast.md` и т. п.).

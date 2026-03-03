@@ -24,7 +24,7 @@ Bare services give you none of that. Your processes share the same filesystem, c
 
 ## Configuration
 
-Bare services are defined with `[services.<name>]` sections in your Coastfile. A Coastfile **cannot** define both `compose` and `[services]` — they are mutually exclusive.
+Bare services are defined with `[services.<name>]` sections in your Coastfile. A Coastfile can define bare services on their own or alongside `compose` — see [Mixed Service Types](MIXED_SERVICE_TYPES.md) for the latter.
 
 ```toml
 [coast]

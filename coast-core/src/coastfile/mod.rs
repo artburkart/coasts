@@ -472,15 +472,6 @@ impl Coastfile {
             None => base.agent_shell,
         };
 
-        // Validate mutual exclusion: compose and services cannot coexist
-        if compose.is_some() && !services.is_empty() {
-            return Err(CoastError::coastfile(
-                "a Coastfile cannot define both 'compose' and '[services]'. \
-                 Use compose for Docker Compose workflows, or [services] for bare process services."
-                    .to_string(),
-            ));
-        }
-
         let primary_port = raw.coast.primary_port.or(base.primary_port);
 
         if let Some(ref pp) = primary_port {
@@ -670,15 +661,6 @@ impl Coastfile {
         let agent_shell = raw
             .agent_shell
             .map(|r| AgentShellConfig { command: r.command });
-
-        // Validate mutual exclusion: compose and services cannot coexist
-        if compose.is_some() && !services.is_empty() {
-            return Err(CoastError::coastfile(
-                "a Coastfile cannot define both 'compose' and '[services]'. \
-                 Use compose for Docker Compose workflows, or [services] for bare process services."
-                    .to_string(),
-            ));
-        }
 
         let primary_port = raw.coast.primary_port;
         if let Some(ref pp) = primary_port {

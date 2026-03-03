@@ -445,12 +445,16 @@ async fn start_and_wait_for_services(
             progress,
             BuildProgressEvent::done("Starting services", "ok"),
         );
-    } else if has_services {
-        let starting_step = total_steps - 1;
-        emit(
-            progress,
-            BuildProgressEvent::started("Starting services", starting_step, total_steps),
-        );
+    }
+
+    if has_services {
+        if !has_compose {
+            let starting_step = total_steps - 1;
+            emit(
+                progress,
+                BuildProgressEvent::started("Starting services", starting_step, total_steps),
+            );
+        }
 
         let svc_runtime = coast_docker::dind::DindRuntime::with_client(docker.clone());
         let setup_cmd = crate::bare_services::generate_setup_and_start_command(bare_services);
@@ -482,11 +486,15 @@ async fn start_and_wait_for_services(
             );
         }
 
-        emit(
-            progress,
-            BuildProgressEvent::done("Starting services", "ok"),
-        );
-    } else {
+        if !has_compose {
+            emit(
+                progress,
+                BuildProgressEvent::done("Starting services", "ok"),
+            );
+        }
+    }
+
+    if !has_compose && !has_services {
         info!(instance = %instance_name, "no compose file configured — skipping compose up. Instance is Idle.");
     }
     Ok(())

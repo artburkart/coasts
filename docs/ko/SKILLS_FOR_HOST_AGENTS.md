@@ -87,7 +87,7 @@ find the relevant documentation.
 
 가장 빠른 방법은 에이전트가 스스로 설정하게 하는 것입니다. 프로젝트 디렉터리에서 다음 중 하나를 실행하세요:
 
-```sh
+```bash-emphasis
 # Claude Code
 claude -p "$(coast skills-prompt)"
 
@@ -96,6 +96,10 @@ codex "$(coast skills-prompt)"
 
 # Cursor (from terminal)
 cursor --chat "$(coast skills-prompt)"
+
+# Other agents (manual)
+coast skills-prompt
+# copy the output into your agent's system prompt
 ```
 
 이렇게 하면 에이전트에 스킬 텍스트와, 이를 자신의 설정 파일(`CLAUDE.md`, `AGENTS.md`, `.cursor/rules/coast.md` 등)에 작성하라는 지침이 제공됩니다.

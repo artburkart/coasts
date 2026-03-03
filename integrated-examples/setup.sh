@@ -939,6 +939,96 @@ SERVERJS_V2_EOF
 
 setup_coast_bare
 
+# --- coast-mixed ---
+# A Coast project combining Docker Compose services with bare process services.
+# Tests that compose + [services] coexist: the compose file runs an API server,
+# while a bare service runs a simulated vite dev server on the DinD host.
+
+setup_coast_mixed() {
+    local dir="$PROJECTS_DIR/coast-mixed"
+    echo "Setting up coast-mixed..."
+    mkdir -p "$dir"
+
+    rm -rf "$dir/.git" "$dir/.coasts"
+
+    cd "$dir"
+    git init -b main
+    git config user.name "Coast Dev"
+    git config user.email "dev@coasts.dev"
+    git add -A
+    git commit -m "initial commit: mixed compose + bare services"
+
+    git checkout -b feature-v2
+
+    cat > "$dir/server.js" << 'SERVERJS_V2_EOF'
+const http = require("http");
+const os = require("os");
+
+const PORT = 3000;
+
+const server = http.createServer((req, res) => {
+  const json = (data, status = 200) => {
+    res.writeHead(status, { "Content-Type": "application/json" });
+    res.end(JSON.stringify(data));
+  };
+
+  if (req.url === "/health") {
+    return json({ status: "ok" });
+  }
+
+  return json({
+    service: "api",
+    version: "v2",
+    message: "Hello from Coast mixed services v2 (compose API)!",
+    hostname: os.hostname(),
+    uptime: process.uptime(),
+  });
+});
+
+server.listen(PORT, () => {
+  console.log(`API server v2 listening on port ${PORT}`);
+});
+SERVERJS_V2_EOF
+
+    cat > "$dir/vite-server.js" << 'VITEJS_V2_EOF'
+const http = require("http");
+const os = require("os");
+
+const PORT = 40100;
+
+const server = http.createServer((req, res) => {
+  const json = (data, status = 200) => {
+    res.writeHead(status, { "Content-Type": "application/json" });
+    res.end(JSON.stringify(data));
+  };
+
+  if (req.url === "/health") {
+    return json({ status: "ok" });
+  }
+
+  return json({
+    service: "vite",
+    version: "v2",
+    message: "Hello from Coast mixed services v2 (bare vite)!",
+    hostname: os.hostname(),
+    uptime: process.uptime(),
+  });
+});
+
+server.listen(PORT, () => {
+  console.log(`Vite dev server v2 listening on port ${PORT}`);
+});
+VITEJS_V2_EOF
+
+    git add -A
+    git commit -m "feature: v2 responses for both compose and bare services"
+
+    git checkout main
+    echo "  coast-mixed ready (branches: main, feature-v2)"
+}
+
+setup_coast_mixed
+
 # --- coast-simple ---
 # A Coast project without docker-compose (purely for isolated DinD containers).
 

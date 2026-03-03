@@ -15,6 +15,8 @@ use ts_rs::TS;
 use coast_core::types::InstanceStatus;
 use rust_i18n::t;
 
+use coast_docker::runtime::Runtime;
+
 use crate::handlers::compose_context;
 use crate::server::AppState;
 
@@ -103,8 +105,27 @@ async fn handle_logs_socket(
         return;
     };
 
-    let is_bare = crate::bare_services::has_bare_services(docker, &container_id).await;
-    let cmd_parts = if is_bare {
+    let has_bare = crate::bare_services::has_bare_services(docker, &container_id).await;
+    let has_compose = crate::handlers::assign::has_compose(&params.project);
+
+    // In mixed mode with a service filter, route to the right log source
+    let use_bare = if has_bare && has_compose {
+        if let Some(ref service) = params.service {
+            let runtime = coast_docker::dind::DindRuntime::with_client(docker.clone());
+            let log_path = format!("{}/{}.log", crate::bare_services::LOG_DIR, service);
+            runtime
+                .exec_in_coast(&container_id, &["test", "-f", &log_path])
+                .await
+                .map(|r| r.success())
+                .unwrap_or(false)
+        } else {
+            false
+        }
+    } else {
+        has_bare && !has_compose
+    };
+
+    let cmd_parts = if use_bare {
         let tail_cmd = crate::bare_services::generate_logs_command(
             params.service.as_deref(),
             None,

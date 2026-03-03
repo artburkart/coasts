@@ -14,6 +14,7 @@ use crate::server::AppState;
 use super::compose_context_for_build;
 
 /// Handle a ps request.
+#[allow(clippy::cognitive_complexity)]
 pub async fn handle(req: PsRequest, state: &AppState) -> Result<PsResponse> {
     info!(name = %req.name, project = %req.project, "handling ps request");
 
@@ -68,40 +69,11 @@ pub async fn handle(req: PsRequest, state: &AppState) -> Result<PsResponse> {
         CoastError::docker("Docker is not available. Ensure Docker is running and restart coastd.")
     })?;
 
-    let is_bare = crate::bare_services::has_bare_services(docker, &container_id).await;
-
-    let cmd_parts = if is_bare {
-        let ps_cmd = crate::bare_services::generate_ps_command();
-        vec!["sh".to_string(), "-c".to_string(), ps_cmd]
-    } else {
-        let ctx = compose_context_for_build(&req.project, build_id.as_deref());
-        ctx.compose_shell("ps --format json")
-    };
-    let cmd_refs: Vec<&str> = cmd_parts.iter().map(std::string::String::as_str).collect();
+    let has_bare = crate::bare_services::has_bare_services(docker, &container_id).await;
+    let has_compose = super::assign::has_compose(&req.project);
 
     let runtime = coast_docker::dind::DindRuntime::with_client(docker.clone());
-    let exec_result = runtime
-        .exec_in_coast(&container_id, &cmd_refs)
-        .await
-        .map_err(|e| {
-            CoastError::docker(format!(
-                "Failed to get service status for instance '{}': {}",
-                req.name, e
-            ))
-        })?;
-
-    if !exec_result.success() {
-        return Err(CoastError::docker(format!(
-            "ps command failed in instance '{}' (exit code {}): {}",
-            req.name, exec_result.exit_code, exec_result.stderr
-        )));
-    }
-
-    let kind_value = if is_bare { "bare" } else { "compose" };
-    let mut services = parse_compose_ps_output(&exec_result.stdout)?;
-    for svc in &mut services {
-        svc.kind = Some(kind_value.to_string());
-    }
+    let mut services: Vec<ServiceStatus> = Vec::new();
 
     // Load shared service names so we can exclude them
     let shared_names: std::collections::HashSet<String> = {
@@ -113,17 +85,29 @@ pub async fn handle(req: PsRequest, state: &AppState) -> Result<PsResponse> {
             .collect()
     };
 
-    // Filter out shared services from the ps output
-    if !shared_names.is_empty() {
-        services.retain(|s| !shared_names.contains(&s.name));
-    }
-
-    // Detect missing/crashed services and filter one-shot jobs.
-    // Only services with `ports:` in the compose config are long-running.
-    // One-shot jobs (like migrations) are expected to exit and should not
-    // appear as "down" or clutter the service list when not running.
-    if !is_bare {
+    if has_compose {
         let ctx = compose_context_for_build(&req.project, build_id.as_deref());
+        let cmd_parts = ctx.compose_shell("ps --format json");
+        let cmd_refs: Vec<&str> = cmd_parts.iter().map(std::string::String::as_str).collect();
+
+        let exec_result = runtime
+            .exec_in_coast(&container_id, &cmd_refs)
+            .await
+            .map_err(|e| {
+                CoastError::docker(format!(
+                    "Failed to get service status for instance '{}': {}",
+                    req.name, e
+                ))
+            })?;
+
+        if exec_result.success() {
+            let mut compose_svcs = parse_compose_ps_output(&exec_result.stdout)?;
+            for svc in &mut compose_svcs {
+                svc.kind = Some("compose".to_string());
+            }
+            services.extend(compose_svcs);
+        }
+
         let config_cmd = ctx.compose_shell("config");
         let config_refs: Vec<&str> = config_cmd.iter().map(String::as_str).collect();
         if let Ok(config_result) = runtime.exec_in_coast(&container_id, &config_refs).await {
@@ -133,10 +117,12 @@ pub async fn handle(req: PsRequest, state: &AppState) -> Result<PsResponse> {
                         .into_iter()
                         .collect();
 
-                // Remove non-running one-shot services (no ports, exited)
-                services.retain(|s| s.status == "running" || port_services.contains(&s.name));
+                services.retain(|s| {
+                    s.kind.as_deref() != Some("compose")
+                        || s.status == "running"
+                        || port_services.contains(&s.name)
+                });
 
-                // Add missing long-running services as "down"
                 let found_names: std::collections::HashSet<String> =
                     services.iter().map(|s| s.name.clone()).collect();
                 for svc_name in &port_services {
@@ -146,12 +132,50 @@ pub async fn handle(req: PsRequest, state: &AppState) -> Result<PsResponse> {
                             status: "down".to_string(),
                             ports: String::new(),
                             image: String::new(),
-                            kind: Some(kind_value.to_string()),
+                            kind: Some("compose".to_string()),
                         });
                     }
                 }
             }
         }
+    }
+
+    if has_bare {
+        let ps_cmd = crate::bare_services::generate_ps_command();
+        let bare_cmd_parts = ["sh".to_string(), "-c".to_string(), ps_cmd];
+        let bare_refs: Vec<&str> = bare_cmd_parts
+            .iter()
+            .map(std::string::String::as_str)
+            .collect();
+
+        let bare_result = runtime
+            .exec_in_coast(&container_id, &bare_refs)
+            .await
+            .map_err(|e| {
+                CoastError::docker(format!(
+                    "Failed to get bare service status for instance '{}': {}",
+                    req.name, e
+                ))
+            })?;
+
+        if bare_result.success() {
+            let mut bare_svcs = parse_compose_ps_output(&bare_result.stdout)?;
+            for svc in &mut bare_svcs {
+                svc.kind = Some("bare".to_string());
+            }
+            services.extend(bare_svcs);
+        }
+    }
+
+    if !has_compose && !has_bare {
+        return Err(CoastError::docker(format!(
+            "No compose or bare services configured for instance '{}'",
+            req.name
+        )));
+    }
+
+    if !shared_names.is_empty() {
+        services.retain(|s| !shared_names.contains(&s.name));
     }
 
     info!(

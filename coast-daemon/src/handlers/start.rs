@@ -318,29 +318,25 @@ pub async fn handle(
                     &progress,
                     BuildProgressEvent::item("Waiting for services", "all services", "ok"),
                 );
-            } else {
-                // Check for bare services supervisor
-                let has_svc = crate::bare_services::has_bare_services(docker, container_id).await;
-                if has_svc {
-                    let start_cmd = crate::bare_services::generate_start_command();
-                    let svc_rt = coast_docker::dind::DindRuntime::with_client(docker.clone());
-                    let _ = svc_rt
-                        .exec_in_coast(container_id, &["sh", "-c", &start_cmd])
-                        .await;
-                    emit(
-                        &progress,
-                        BuildProgressEvent::item(
-                            "Running compose up",
-                            "bare services started",
-                            "ok",
-                        ),
-                    );
-                } else {
-                    emit(
-                        &progress,
-                        BuildProgressEvent::item("Running compose up", "no compose", "skip"),
-                    );
-                }
+            }
+
+            // Also start bare services (may coexist with compose)
+            let has_svc = crate::bare_services::has_bare_services(docker, container_id).await;
+            if has_svc {
+                let start_cmd = crate::bare_services::generate_start_command();
+                let svc_rt = coast_docker::dind::DindRuntime::with_client(docker.clone());
+                let _ = svc_rt
+                    .exec_in_coast(container_id, &["sh", "-c", &start_cmd])
+                    .await;
+                emit(
+                    &progress,
+                    BuildProgressEvent::item("Running compose up", "bare services started", "ok"),
+                );
+            } else if !project_has_compose {
+                emit(
+                    &progress,
+                    BuildProgressEvent::item("Running compose up", "no compose", "skip"),
+                );
             }
         }
     }

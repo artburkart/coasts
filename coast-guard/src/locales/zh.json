@@ -508,6 +508,7 @@
   "docs.nav.mcpServers": "MCP 服务器",
   "docs.nav.filesystem": "文件系统",
   "docs.nav.bareServices": "裸服务",
+  "docs.nav.mixedServiceTypes": "混合服务类型",
   "docs.nav.troubleshooting": "故障排除",
   "docs.nav.coastfiles": "Coastfiles",
   "docs.nav.coastfileProject": "项目与设置",

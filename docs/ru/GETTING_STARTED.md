@@ -67,6 +67,10 @@ codex "$(coast installation-prompt)"
 
 # Cursor (from terminal)
 cursor --chat "$(coast installation-prompt)"
+
+# Other agents (manual)
+coast installation-prompt
+# copy the output into your agent's system prompt
 ```
 
 Промпт охватывает TOML-формат Coastfile, стратегии томов, внедрение секретов и все релевантные CLI-команды. Ваш агент проанализирует проект и сгенерирует Coastfile.

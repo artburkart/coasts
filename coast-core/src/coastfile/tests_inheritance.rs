@@ -920,21 +920,95 @@ web = 3000
 }
 
 #[test]
-fn test_reject_compose_plus_services() {
+fn test_mixed_compose_and_bare_services() {
     let toml = r#"
 [coast]
-name = "conflict"
+name = "mixed"
+compose = "docker-compose.yml"
+
+[services.vite]
+command = "npm run dev"
+port = 3040
+restart = "on-failure"
+
+[services.worker]
+command = "node worker.js"
+restart = "always"
+
+[ports]
+app = 3000
+vite = 3040
+"#;
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("docker-compose.yml"), "version: '3'").unwrap();
+    let cf = Coastfile::parse(toml, dir.path()).unwrap();
+    assert_eq!(cf.name, "mixed");
+    assert!(cf.compose.is_some());
+    assert_eq!(cf.services.len(), 2);
+
+    let vite = cf.services.iter().find(|s| s.name == "vite").unwrap();
+    assert_eq!(vite.command, "npm run dev");
+    assert_eq!(vite.port, Some(3040));
+    assert_eq!(vite.restart, crate::types::RestartPolicy::OnFailure);
+
+    let worker = cf.services.iter().find(|s| s.name == "worker").unwrap();
+    assert_eq!(worker.command, "node worker.js");
+    assert_eq!(worker.restart, crate::types::RestartPolicy::Always);
+}
+
+#[test]
+fn test_mixed_inherits_compose_adds_services() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("docker-compose.yml"), "version: '3'").unwrap();
+
+    let base_toml = r#"
+[coast]
+name = "base-mixed"
+compose = "docker-compose.yml"
+
+[ports]
+app = 3000
+"#;
+    std::fs::write(dir.path().join("Coastfile"), base_toml).unwrap();
+
+    let child_toml = r#"
+[coast]
+extends = "Coastfile"
+
+[services.vite]
+command = "npm run dev"
+port = 3040
+
+[ports]
+vite = 3040
+"#;
+    let child_path = dir.path().join("Coastfile.dev");
+    std::fs::write(&child_path, child_toml).unwrap();
+    let cf = Coastfile::from_file(&child_path).unwrap();
+    assert_eq!(cf.name, "base-mixed");
+    assert!(cf.compose.is_some());
+    assert_eq!(cf.services.len(), 1);
+    assert_eq!(cf.services[0].name, "vite");
+    assert_eq!(cf.ports.len(), 2);
+}
+
+#[test]
+fn test_mixed_services_validation_still_applies() {
+    let toml = r#"
+[coast]
+name = "bad-mixed"
 compose = "docker-compose.yml"
 
 [services.web]
-command = "npm run dev"
+command = "   "
 "#;
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("docker-compose.yml"), "version: '3'").unwrap();
     let result = Coastfile::parse(toml, dir.path());
     assert!(result.is_err());
     let err = result.unwrap_err().to_string();
-    assert!(err.contains("cannot define both"));
+    assert!(err.contains("command"));
+    assert!(err.contains("empty"));
 }
 
 #[test]
