@@ -24,9 +24,17 @@ struct GitHubRelease {
     tag_name: String,
 }
 
-/// Return the path to the update-check cache file (~/.coast/update-check.json).
+/// Return the path to the update-check cache file inside the coast home directory.
+///
+/// Respects `COAST_HOME` so dev builds (`~/.coast-dev/`) and production builds
+/// (`~/.coast/`) use separate caches.
 pub fn cache_path() -> Option<PathBuf> {
-    dirs::home_dir().map(|h| h.join(".coast").join(CHECK_CACHE_FILE))
+    let home = if let Ok(dir) = std::env::var("COAST_HOME") {
+        PathBuf::from(dir)
+    } else {
+        dirs::home_dir().map(|h| h.join(".coast"))?
+    };
+    Some(home.join(CHECK_CACHE_FILE))
 }
 
 /// Read the cached update check result, if it exists and is not expired.
@@ -130,7 +138,11 @@ mod tests {
         let path = cache_path();
         assert!(path.is_some());
         let path = path.unwrap();
-        assert!(path.ends_with(".coast/update-check.json"));
+        assert!(
+            path.ends_with("update-check.json"),
+            "unexpected cache path: {}",
+            path.display()
+        );
     }
 
     #[test]
