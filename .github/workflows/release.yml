@@ -176,3 +176,30 @@ jobs:
             dist/coast-v*.tar.gz.sha256
           prerelease: ${{ contains(github.ref_name, '-rc') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-alpha') }}
 
+      - name: Verify release assets are downloadable
+        if: ${{ !contains(github.ref_name, '-rc') && !contains(github.ref_name, '-beta') && !contains(github.ref_name, '-alpha') }}
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          for PLATFORM in darwin-arm64 darwin-amd64 linux-amd64 linux-arm64; do
+            URL="https://github.com/${{ github.repository }}/releases/download/${GITHUB_REF_NAME}/coast-v${VERSION}-${PLATFORM}.tar.gz"
+            echo "Checking ${PLATFORM}..."
+            if ! curl -fsSL --head "$URL" >/dev/null 2>&1; then
+              echo "::error::Asset not downloadable: coast-v${VERSION}-${PLATFORM}.tar.gz"
+              exit 1
+            fi
+          done
+          echo "All assets verified"
+
+      - name: Update CLI policy minimum_version
+        if: ${{ !contains(github.ref_name, '-rc') && !contains(github.ref_name, '-beta') && !contains(github.ref_name, '-alpha') }}
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          git fetch origin main
+          git checkout main
+          jq --arg v "$VERSION" '.minimum_version = $v' cli-update-policy.json > tmp.json && mv tmp.json cli-update-policy.json
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add cli-update-policy.json
+          git commit -m "chore: update CLI policy minimum_version to ${VERSION}"
+          git push origin main
+
