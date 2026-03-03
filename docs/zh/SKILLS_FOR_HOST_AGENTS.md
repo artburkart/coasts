@@ -87,7 +87,7 @@ find the relevant documentation.
 
 最快的方法是让代理自己完成设置。在你的项目目录中运行以下命令之一:
 
-```sh
+```bash-emphasis
 # Claude Code
 claude -p "$(coast skills-prompt)"
 
@@ -96,6 +96,10 @@ codex "$(coast skills-prompt)"
 
 # Cursor (from terminal)
 cursor --chat "$(coast skills-prompt)"
+
+# Other agents (manual)
+coast skills-prompt
+# copy the output into your agent's system prompt
 ```
 
 这会向代理提供技能文本以及将其写入自身配置文件（`CLAUDE.md`、`AGENTS.md`、`.cursor/rules/coast.md` 等）的指令。

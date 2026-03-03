@@ -724,33 +724,67 @@ pub async fn handle_with_status(
             // "hot" services use a fast path: skip compose down entirely and
             // go straight to `compose up --force-recreate -t 1`. This avoids
             // waiting for graceful shutdown and cuts assign time roughly in half.
-            if all_hot {
-                let ctx =
-                    super::compose_context_for_build(&req.project, instance.build_id.as_deref());
-                let up_cmd = ctx.compose_shell("up -d --force-recreate --remove-orphans -t 1");
-                let up_refs: Vec<&str> = up_cmd.iter().map(std::string::String::as_str).collect();
-                info!("hot assign: force-recreating containers (skipping compose down)");
-                let up_result = rt.exec_in_coast(&container_id, &up_refs).await;
-                match &up_result {
-                    Ok(r) if r.success() => {
-                        info!("hot assign: compose up --force-recreate completed");
+            let project_has_compose = has_compose(&req.project);
+
+            if project_has_compose {
+                if all_hot {
+                    let ctx = super::compose_context_for_build(
+                        &req.project,
+                        instance.build_id.as_deref(),
+                    );
+                    let up_cmd = ctx.compose_shell("up -d --force-recreate --remove-orphans -t 1");
+                    let up_refs: Vec<&str> =
+                        up_cmd.iter().map(std::string::String::as_str).collect();
+                    info!("hot assign: force-recreating containers (skipping compose down)");
+                    let up_result = rt.exec_in_coast(&container_id, &up_refs).await;
+                    match &up_result {
+                        Ok(r) if r.success() => {
+                            info!("hot assign: compose up --force-recreate completed");
+                        }
+                        Ok(r) => {
+                            tracing::warn!(stderr = %r.stderr, "hot assign: compose up had issues");
+                        }
+                        Err(e) => {
+                            tracing::warn!(error = %e, "hot assign: compose up failed");
+                        }
                     }
-                    Ok(r) => {
-                        tracing::warn!(stderr = %r.stderr, "hot assign: compose up had issues");
-                    }
-                    Err(e) => {
-                        tracing::warn!(error = %e, "hot assign: compose up failed");
+                } else {
+                    let ctx = super::compose_context_for_build(
+                        &req.project,
+                        instance.build_id.as_deref(),
+                    );
+                    let down_cmd = ctx.compose_shell("down --remove-orphans -t 2");
+                    let down_refs: Vec<&str> =
+                        down_cmd.iter().map(std::string::String::as_str).collect();
+                    let _ = rt.exec_in_coast(&container_id, &down_refs).await;
+                    info!("compose down completed after workspace remount");
+
+                    let up_cmd = ctx.compose_shell("up -d --remove-orphans");
+                    let up_refs: Vec<&str> =
+                        up_cmd.iter().map(std::string::String::as_str).collect();
+                    let up_result = rt.exec_in_coast(&container_id, &up_refs).await;
+                    match &up_result {
+                        Ok(r) if r.success() => {
+                            info!("compose up completed after workspace remount");
+                        }
+                        Ok(r) => {
+                            tracing::warn!(stderr = %r.stderr, "compose up after workspace remount had issues");
+                        }
+                        Err(e) => {
+                            tracing::warn!(error = %e, "compose up after workspace remount failed");
+                        }
                     }
                 }
-            } else if crate::bare_services::has_bare_services(docker, &container_id).await {
-                // Bare services: stop, re-run install, start
+            }
+
+            // Restart bare services (may coexist with compose)
+            if crate::bare_services::has_bare_services(docker, &container_id).await {
                 let stop_cmd = crate::bare_services::generate_stop_command();
                 let _ = rt
                     .exec_in_coast(&container_id, &["sh", "-c", &stop_cmd])
                     .await;
                 info!("bare services stopped for branch switch");
 
-                // Read service definitions from the coastfile to get install steps
                 let home = dirs::home_dir().unwrap_or_default();
                 let cf_path = instance
                     .build_id
@@ -793,29 +827,6 @@ pub async fn handle_with_status(
                             error = %e,
                             "bare services install after branch switch failed"
                         );
-                    }
-                }
-            } else {
-                let ctx =
-                    super::compose_context_for_build(&req.project, instance.build_id.as_deref());
-                let down_cmd = ctx.compose_shell("down --remove-orphans -t 2");
-                let down_refs: Vec<&str> =
-                    down_cmd.iter().map(std::string::String::as_str).collect();
-                let _ = rt.exec_in_coast(&container_id, &down_refs).await;
-                info!("compose down completed after workspace remount");
-
-                let up_cmd = ctx.compose_shell("up -d --remove-orphans");
-                let up_refs: Vec<&str> = up_cmd.iter().map(std::string::String::as_str).collect();
-                let up_result = rt.exec_in_coast(&container_id, &up_refs).await;
-                match &up_result {
-                    Ok(r) if r.success() => {
-                        info!("compose up completed after workspace remount");
-                    }
-                    Ok(r) => {
-                        tracing::warn!(stderr = %r.stderr, "compose up after workspace remount had issues");
-                    }
-                    Err(e) => {
-                        tracing::warn!(error = %e, "compose up after workspace remount failed");
                     }
                 }
             }

@@ -212,7 +212,9 @@ pub async fn handle(
             } else {
                 info!("autostart=false, skipping compose up");
             }
-        } else if has_services {
+        }
+
+        if has_services {
             let stop_cmd = vec!["sh", "/coast-supervisor/stop-all.sh"];
             info!("stopping bare services");
             let stop_result = dind_rt.exec_in_coast(&container_id, &stop_cmd).await;
@@ -259,7 +261,9 @@ pub async fn handle(
             } else {
                 info!("autostart=false, skipping bare service start");
             }
-        } else {
+        }
+
+        if !has_compose && !has_services {
             info!("no compose or bare services configured, nothing to restart");
         }
     }

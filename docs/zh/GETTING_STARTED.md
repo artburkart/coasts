@@ -67,6 +67,10 @@ codex "$(coast installation-prompt)"
 
 # Cursor (from terminal)
 cursor --chat "$(coast installation-prompt)"
+
+# Other agents (manual)
+coast installation-prompt
+# copy the output into your agent's system prompt
 ```
 
 该 prompt 覆盖 Coastfile TOML 格式、卷策略、密钥注入，以及所有相关 CLI 命令。你的智能体会分析你的项目并生成一个 Coastfile。

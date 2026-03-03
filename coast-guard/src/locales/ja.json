@@ -508,6 +508,7 @@
   "docs.nav.mcpServers": "MCP サーバー",
   "docs.nav.filesystem": "ファイルシステム",
   "docs.nav.bareServices": "ベアサービス",
+  "docs.nav.mixedServiceTypes": "混合サービスタイプ",
   "docs.nav.troubleshooting": "トラブルシューティング",
   "docs.nav.coastfiles": "Coastfiles",
   "docs.nav.coastfileProject": "プロジェクトとセットアップ",

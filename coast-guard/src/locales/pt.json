@@ -493,6 +493,7 @@
   "docs.nav.mcpServers": "Servidores MCP",
   "docs.nav.filesystem": "Sistema de Arquivos",
   "docs.nav.bareServices": "Serviços Bare",
+  "docs.nav.mixedServiceTypes": "Tipos de Serviço Mistos",
   "docs.nav.troubleshooting": "Solução de Problemas",
   "docs.nav.coastfiles": "Coastfiles",
   "docs.nav.coastfileProject": "Projeto e Configuração",

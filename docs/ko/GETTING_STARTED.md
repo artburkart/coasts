@@ -67,6 +67,10 @@ codex "$(coast installation-prompt)"
 
 # Cursor (from terminal)
 cursor --chat "$(coast installation-prompt)"
+
+# Other agents (manual)
+coast installation-prompt
+# copy the output into your agent's system prompt
 ```
 
 이 프롬프트는 Coastfile TOML 형식, 볼륨 전략, 시크릿 주입, 그리고 관련된 모든 CLI 명령을 다룹니다. 에이전트는 프로젝트를 분석하고 Coastfile을 생성합니다.

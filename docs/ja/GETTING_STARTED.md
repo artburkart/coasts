@@ -67,6 +67,10 @@ codex "$(coast installation-prompt)"
 
 # Cursor (from terminal)
 cursor --chat "$(coast installation-prompt)"
+
+# Other agents (manual)
+coast installation-prompt
+# copy the output into your agent's system prompt
 ```
 
 このプロンプトは、Coastfile の TOML 形式、ボリューム戦略、シークレット注入、関連するすべての CLI コマンドをカバーしています。エージェントがプロジェクトを解析し、Coastfile を生成します。
