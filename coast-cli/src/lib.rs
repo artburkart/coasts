@@ -213,7 +213,9 @@ fn print_localized_clap_error(
 
     if matches!(
         err.kind(),
-        ErrorKind::DisplayHelp | ErrorKind::DisplayVersion
+        ErrorKind::DisplayHelp
+            | ErrorKind::DisplayVersion
+            | ErrorKind::DisplayHelpOnMissingArgumentOrSubcommand
     ) {
         err.print().ok();
         return;
@@ -315,8 +317,15 @@ pub async fn run() -> Result<()> {
     let matches = match cmd.try_get_matches() {
         Ok(m) => m,
         Err(e) => {
+            use clap::error::ErrorKind;
             print_localized_clap_error(&e, lang, &localized_cmd);
-            std::process::exit(2);
+            let code = match e.kind() {
+                ErrorKind::DisplayHelp
+                | ErrorKind::DisplayVersion
+                | ErrorKind::DisplayHelpOnMissingArgumentOrSubcommand => 0,
+                _ => e.exit_code(),
+            };
+            std::process::exit(code);
         }
     };
     let cli = Cli::from_arg_matches(&matches)?;
