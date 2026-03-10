@@ -9,6 +9,9 @@ use coast_core::protocol::{BuildProgressEvent, CoastEvent, StartRequest, StartRe
 use coast_core::types::{InstanceStatus, PortMapping};
 use coast_docker::runtime::Runtime;
 
+use crate::handlers::shared_service_routing::{
+    ensure_shared_service_proxies, plan_shared_service_routing,
+};
 use crate::server::AppState;
 
 /// Emit a progress event if a sender is provided.
@@ -192,40 +195,24 @@ pub async fn handle(
                 BuildProgressEvent::started("Running compose up", 3, TOTAL_START_STEPS),
             );
 
-            let project_has_compose = {
-                let home = dirs::home_dir().unwrap_or_default();
-                let cf_path = home
-                    .join(".coast")
-                    .join("images")
-                    .join(&req.project)
-                    .join("latest")
-                    .join("coastfile.toml");
-                if cf_path.exists() {
-                    coast_core::coastfile::Coastfile::from_file(&cf_path)
-                        .ok()
-                        .map(|cf| cf.compose.is_some())
-                        .unwrap_or(true)
-                } else {
-                    true
-                }
-            };
+            let coastfile_path =
+                super::artifact_coastfile_path(&req.project, instance.build_id.as_deref());
+            let parsed_coastfile = coastfile_path
+                .exists()
+                .then(|| coast_core::coastfile::Coastfile::from_file(&coastfile_path).ok())
+                .flatten();
+            let project_has_compose = parsed_coastfile
+                .as_ref()
+                .map(|coastfile| coastfile.compose.is_some())
+                .unwrap_or(true);
 
             // Re-apply the /workspace bind mount (project root or worktree).
             {
                 let mount_rt = coast_docker::dind::DindRuntime::with_client(docker.clone());
                 let wt_dir = {
-                    let home = dirs::home_dir().unwrap_or_default();
-                    let cf_path = home
-                        .join(".coast")
-                        .join("images")
-                        .join(&req.project)
-                        .join("latest")
-                        .join("coastfile.toml");
-                    let coastfile_default = cf_path
-                        .exists()
-                        .then(|| coast_core::coastfile::Coastfile::from_file(&cf_path).ok())
-                        .flatten()
-                        .map(|cf| cf.worktree_dir)
+                    let coastfile_default = parsed_coastfile
+                        .as_ref()
+                        .map(|cf| cf.worktree_dir.clone())
                         .unwrap_or_else(|| ".worktrees".to_string());
                     // Prefer detection from existing git worktrees over the Coastfile default.
                     super::assign::read_project_root(&req.project)
@@ -272,6 +259,46 @@ pub async fn handle(
                     }
                     Err(e) => {
                         warn!(name = %req.name, error = %e, "failed to re-apply /workspace bind mount");
+                    }
+                }
+            }
+
+            if let Some(ref coastfile) = parsed_coastfile {
+                if !coastfile.shared_services.is_empty() {
+                    let shared_service_targets = coastfile
+                        .shared_services
+                        .iter()
+                        .map(|service| {
+                            (
+                                service.name.clone(),
+                                crate::shared_services::shared_container_name(
+                                    &req.project,
+                                    &service.name,
+                                ),
+                            )
+                        })
+                        .collect();
+
+                    let routing = match plan_shared_service_routing(
+                        docker,
+                        container_id,
+                        &coastfile.shared_services,
+                        &shared_service_targets,
+                    )
+                    .await
+                    {
+                        Ok(routing) => routing,
+                        Err(error) => {
+                            revert_to_stopped(state, &req.project, &req.name).await;
+                            return Err(error);
+                        }
+                    };
+
+                    if let Err(error) =
+                        ensure_shared_service_proxies(docker, container_id, &routing).await
+                    {
+                        revert_to_stopped(state, &req.project, &req.name).await;
+                        return Err(error);
                     }
                 }
             }

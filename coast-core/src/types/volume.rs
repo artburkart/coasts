@@ -1,7 +1,9 @@
 use std::collections::HashMap;
+use std::fmt;
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 /// Volume isolation strategy.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -32,11 +34,49 @@ pub struct VolumeConfig {
 }
 
 /// Configuration for a shared service in the Coastfile.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct SharedServicePort {
+    pub host_port: u16,
+    pub container_port: u16,
+}
+
+impl SharedServicePort {
+    pub const fn same(port: u16) -> Self {
+        Self {
+            host_port: port,
+            container_port: port,
+        }
+    }
+
+    pub const fn new(host_port: u16, container_port: u16) -> Self {
+        Self {
+            host_port,
+            container_port,
+        }
+    }
+
+    pub const fn is_identity_mapping(&self) -> bool {
+        self.host_port == self.container_port
+    }
+}
+
+impl fmt::Display for SharedServicePort {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.is_identity_mapping() {
+            write!(f, "{}", self.host_port)
+        } else {
+            write!(f, "{}:{}", self.host_port, self.container_port)
+        }
+    }
+}
+
+/// Configuration for a shared service in the Coastfile.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SharedServiceConfig {
     pub name: String,
     pub image: String,
-    pub ports: Vec<u16>,
+    pub ports: Vec<SharedServicePort>,
     pub volumes: Vec<String>,
     pub env: HashMap<String, String>,
     pub auto_create_db: bool,

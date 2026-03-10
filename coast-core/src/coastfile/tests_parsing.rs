@@ -1,5 +1,5 @@
 use super::*;
-use crate::types::{InjectType, VolumeStrategy};
+use crate::types::{InjectType, SharedServicePort, VolumeStrategy};
 use std::path::Path;
 
 fn sample_coastfile() -> &'static str {
@@ -154,9 +154,51 @@ fn test_parse_shared_services() {
     let pg = &coastfile.shared_services[0];
     assert_eq!(pg.name, "postgres");
     assert_eq!(pg.image, "postgres:16");
-    assert_eq!(pg.ports, vec![5432]);
+    assert_eq!(pg.ports, vec![SharedServicePort::same(5432)]);
     assert!(pg.auto_create_db);
     assert_eq!(pg.inject, Some(InjectType::Env("DATABASE_URL".to_string())));
+}
+
+#[test]
+fn test_parse_shared_service_mapped_ports() {
+    let toml = r#"
+[coast]
+name = "my-app"
+compose = "./docker-compose.yml"
+
+[shared_services.postgis]
+image = "ghcr.io/baosystems/postgis:12-3.3"
+ports = ["5433:5432", 6432]
+"#;
+
+    let coastfile = Coastfile::parse(toml, Path::new("/tmp/project")).unwrap();
+
+    assert_eq!(coastfile.shared_services.len(), 1);
+    assert_eq!(
+        coastfile.shared_services[0].ports,
+        vec![
+            SharedServicePort::new(5433, 5432),
+            SharedServicePort::same(6432),
+        ]
+    );
+}
+
+#[test]
+fn test_parse_shared_service_invalid_mapped_port() {
+    let toml = r#"
+[coast]
+name = "my-app"
+
+[shared_services.postgis]
+image = "ghcr.io/baosystems/postgis:12-3.3"
+ports = ["5433:not-a-port"]
+"#;
+
+    let error = Coastfile::parse(toml, Path::new("/tmp/project")).unwrap_err();
+
+    assert!(error
+        .to_string()
+        .contains("shared_service 'postgis': invalid container port"));
 }
 
 #[test]

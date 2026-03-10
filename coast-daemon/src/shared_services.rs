@@ -166,8 +166,12 @@ pub fn build_shared_container_config(
     // Convert env HashMap to Docker-style "KEY=VALUE" strings
     let env: Vec<String> = config.env.iter().map(|(k, v)| format!("{k}={v}")).collect();
 
-    // Convert port numbers to "port:port" binding strings
-    let ports: Vec<String> = config.ports.iter().map(|p| format!("{p}:{p}")).collect();
+    // Convert shared service mappings to "host:container" binding strings.
+    let ports: Vec<String> = config
+        .ports
+        .iter()
+        .map(|port| format!("{}:{}", port.host_port, port.container_port))
+        .collect();
 
     let mut labels = HashMap::new();
     labels.insert(COAST_SHARED_LABEL.to_string(), config.name.clone());
@@ -216,6 +220,7 @@ pub fn auto_create_db_names(instances: &[&str], base_db_name: &str) -> Vec<Strin
 #[cfg(test)]
 mod tests {
     use super::*;
+    use coast_core::types::SharedServicePort;
 
     // -----------------------------------------------------------
     // shared_network_name tests
@@ -409,7 +414,7 @@ mod tests {
         let service_config = SharedServiceConfig {
             name: "postgres".to_string(),
             image: "postgres:16".to_string(),
-            ports: vec![5432],
+            ports: vec![SharedServicePort::same(5432)],
             volumes: vec!["coast_shared_pg:/var/lib/postgresql/data".to_string()],
             env,
             auto_create_db: true,
@@ -435,7 +440,7 @@ mod tests {
         let service_config = SharedServiceConfig {
             name: "redis".to_string(),
             image: "redis:7".to_string(),
-            ports: vec![6379],
+            ports: vec![SharedServicePort::same(6379)],
             volumes: vec![],
             env: HashMap::new(),
             auto_create_db: false,
@@ -475,11 +480,32 @@ mod tests {
     }
 
     #[test]
+    fn test_build_shared_container_config_mapped_ports() {
+        let service_config = SharedServiceConfig {
+            name: "postgis-db".to_string(),
+            image: "ghcr.io/baosystems/postgis:12-3.3".to_string(),
+            ports: vec![SharedServicePort::new(5433, 5432)],
+            volumes: vec![],
+            env: HashMap::new(),
+            auto_create_db: false,
+            inject: None,
+        };
+
+        let config = build_shared_container_config("yc", &service_config);
+
+        assert_eq!(config.ports, vec!["5433:5432"]);
+    }
+
+    #[test]
     fn test_build_shared_container_config_multiple_ports() {
         let service_config = SharedServiceConfig {
             name: "multi-port".to_string(),
             image: "some-image:latest".to_string(),
-            ports: vec![5432, 8080, 9090],
+            ports: vec![
+                SharedServicePort::same(5432),
+                SharedServicePort::same(8080),
+                SharedServicePort::same(9090),
+            ],
             volumes: vec![],
             env: HashMap::new(),
             auto_create_db: false,

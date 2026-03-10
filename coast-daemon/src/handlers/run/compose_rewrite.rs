@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use tracing::info;
@@ -6,16 +7,14 @@ type YamlMapping = serde_yaml::Mapping;
 
 /// Configuration for rewriting a compose file for a coast instance.
 pub(super) struct ComposeRewriteConfig<'a> {
-    /// Services to remove (shared services + explicitly omitted).
-    pub shared_service_names: &'a [String],
+    /// Shared services to remove and remap via extra_hosts.
+    pub shared_service_hosts: &'a HashMap<String, String>,
     /// Path to the coastfile (for reading omit config and volume definitions).
     pub coastfile_path: &'a Path,
     /// Per-instance image tags: (service_name, image_tag).
     pub per_instance_image_tags: &'a [(String, String)],
     /// Whether the instance has coast-managed volume mounts.
     pub has_volume_mounts: bool,
-    /// Bridge gateway IP for extra_hosts entries.
-    pub bridge_gateway_ip: Option<&'a str>,
     /// Container paths of secret bind mounts to inject into each service.
     pub secret_container_paths: &'a [String],
     /// Project name (used for override directory path).
@@ -99,7 +98,7 @@ fn collect_stubbed_services(
     coastfile: Option<&coast_core::coastfile::Coastfile>,
 ) -> std::collections::HashSet<String> {
     let mut stubbed_services: std::collections::HashSet<String> =
-        config.shared_service_names.iter().cloned().collect();
+        config.shared_service_hosts.keys().cloned().collect();
     if let Some(coastfile) = coastfile {
         for service in &coastfile.omit.services {
             stubbed_services.insert(service.clone());
@@ -396,8 +395,7 @@ fn ensure_extra_hosts(
         &existing_hosts,
         "host.docker.internal:host-gateway".to_string(),
     );
-    let host_target = config.bridge_gateway_ip.unwrap_or("host-gateway");
-    for shared_service_name in config.shared_service_names {
+    for (shared_service_name, host_target) in config.shared_service_hosts {
         changed |= push_host_if_missing(
             sequence,
             &existing_hosts,
@@ -564,14 +562,19 @@ fn output_dir(project: &str, instance_name: &str) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::LazyLock;
+
+    fn empty_shared_service_hosts() -> &'static HashMap<String, String> {
+        static EMPTY: LazyLock<HashMap<String, String>> = LazyLock::new(HashMap::new);
+        &EMPTY
+    }
 
     fn base_config<'a>() -> ComposeRewriteConfig<'a> {
         ComposeRewriteConfig {
-            shared_service_names: &[],
+            shared_service_hosts: empty_shared_service_hosts(),
             coastfile_path: Path::new("/nonexistent-coastfile"),
             per_instance_image_tags: &[],
             has_volume_mounts: false,
-            bridge_gateway_ip: None,
             secret_container_paths: &[],
             project: "test-proj",
             instance_name: "test-inst",
@@ -612,9 +615,9 @@ services:
 volumes:
   pgdata:
 "#;
-        let shared = vec!["postgres".to_string()];
+        let shared = HashMap::from([("postgres".to_string(), "172.17.255.254".to_string())]);
         let config = ComposeRewriteConfig {
-            shared_service_names: &shared,
+            shared_service_hosts: &shared,
             ..base_config()
         };
         let result = rewrite_compose_yaml(compose, &config).unwrap();
@@ -648,9 +651,9 @@ services:
   postgres:
     image: postgres:16
 "#;
-        let shared = vec!["postgres".to_string()];
+        let shared = HashMap::from([("postgres".to_string(), "172.17.255.254".to_string())]);
         let config = ComposeRewriteConfig {
-            shared_service_names: &shared,
+            shared_service_hosts: &shared,
             ..base_config()
         };
         let result = rewrite_compose_yaml(compose, &config).unwrap();
@@ -682,9 +685,9 @@ services:
   postgres:
     image: postgres:16
 "#;
-        let shared = vec!["postgres".to_string()];
+        let shared = HashMap::from([("postgres".to_string(), "172.17.255.254".to_string())]);
         let config = ComposeRewriteConfig {
-            shared_service_names: &shared,
+            shared_service_hosts: &shared,
             ..base_config()
         };
         let result = rewrite_compose_yaml(compose, &config).unwrap();
@@ -711,9 +714,9 @@ services:
   postgres:
     image: postgres:16
 "#;
-        let shared = vec!["postgres".to_string()];
+        let shared = HashMap::from([("postgres".to_string(), "172.17.255.254".to_string())]);
         let config = ComposeRewriteConfig {
-            shared_service_names: &shared,
+            shared_service_hosts: &shared,
             ..base_config()
         };
         let result = rewrite_compose_yaml(compose, &config).unwrap();
@@ -805,16 +808,15 @@ services:
     }
 
     #[test]
-    fn test_shared_service_hostname_uses_bridge_gateway_ip() {
+    fn test_shared_service_hostname_uses_configured_alias_ip() {
         let compose = r#"
 services:
   web:
     image: nginx
 "#;
-        let shared = vec!["postgres".to_string()];
+        let shared = HashMap::from([("postgres".to_string(), "172.17.255.254".to_string())]);
         let config = ComposeRewriteConfig {
-            shared_service_names: &shared,
-            bridge_gateway_ip: Some("172.17.0.1"),
+            shared_service_hosts: &shared,
             ..base_config()
         };
         let result = rewrite_compose_yaml(compose, &config).unwrap();
@@ -827,7 +829,7 @@ services:
             .and_then(|h| h.as_sequence())
             .unwrap();
         let host_strs: Vec<&str> = hosts.iter().filter_map(|v| v.as_str()).collect();
-        assert!(host_strs.contains(&"postgres:172.17.0.1"));
+        assert!(host_strs.contains(&"postgres:172.17.255.254"));
     }
 
     // --- rewrite_compose_yaml: secret volume mounts ---
@@ -896,10 +898,10 @@ services:
 volumes:
   pgdata:
 "#;
-        let shared = vec!["postgres".to_string()];
+        let shared = HashMap::from([("postgres".to_string(), "172.17.255.254".to_string())]);
         let tags = vec![("web".to_string(), "my-web:coast-xyz".to_string())];
         let config = ComposeRewriteConfig {
-            shared_service_names: &shared,
+            shared_service_hosts: &shared,
             per_instance_image_tags: &tags,
             ..base_config()
         };

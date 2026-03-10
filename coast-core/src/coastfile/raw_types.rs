@@ -159,7 +159,7 @@ pub(super) struct RawVolumeConfig {
 pub(super) struct RawSharedServiceConfig {
     pub image: String,
     #[serde(default)]
-    pub ports: Vec<u16>,
+    pub ports: Vec<RawSharedServicePort>,
     #[serde(default)]
     pub volumes: Vec<String>,
     #[serde(default)]
@@ -168,6 +168,13 @@ pub(super) struct RawSharedServiceConfig {
     pub auto_create_db: bool,
     #[serde(default)]
     pub inject: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+pub(super) enum RawSharedServicePort {
+    Single(u16),
+    Mapping(String),
 }
 
 #[derive(Debug, Deserialize)]

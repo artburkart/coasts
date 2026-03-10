@@ -1,0 +1,406 @@
+use std::collections::HashMap;
+use std::fmt::Write;
+use std::net::Ipv4Addr;
+
+use tracing::info;
+
+use coast_core::error::{CoastError, Result};
+use coast_core::types::{SharedServiceConfig, SharedServicePort};
+use coast_docker::runtime::Runtime;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SharedServiceRoute {
+    pub service_name: String,
+    pub alias_ip: Ipv4Addr,
+    pub target_container: String,
+    pub ports: Vec<SharedServicePort>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SharedServiceRoutingPlan {
+    pub docker0_prefix_len: u8,
+    pub routes: Vec<SharedServiceRoute>,
+}
+
+impl SharedServiceRoutingPlan {
+    pub fn host_map(&self) -> HashMap<String, String> {
+        self.routes
+            .iter()
+            .map(|route| (route.service_name.clone(), route.alias_ip.to_string()))
+            .collect()
+    }
+}
+
+pub(crate) async fn plan_shared_service_routing(
+    docker: &bollard::Docker,
+    container_id: &str,
+    shared_services: &[SharedServiceConfig],
+    target_containers: &HashMap<String, String>,
+) -> Result<SharedServiceRoutingPlan> {
+    if shared_services.is_empty() {
+        return Ok(SharedServiceRoutingPlan {
+            docker0_prefix_len: 0,
+            routes: Vec::new(),
+        });
+    }
+
+    let (docker0_ip, docker0_prefix_len) = resolve_docker0_cidr(docker, container_id).await?;
+    build_routing_plan(
+        shared_services,
+        target_containers,
+        docker0_ip,
+        docker0_prefix_len,
+    )
+}
+
+pub(crate) async fn ensure_shared_service_proxies(
+    docker: &bollard::Docker,
+    container_id: &str,
+    plan: &SharedServiceRoutingPlan,
+) -> Result<()> {
+    if plan.routes.is_empty() {
+        return Ok(());
+    }
+
+    let runtime = coast_docker::dind::DindRuntime::with_client(docker.clone());
+    let script = build_proxy_setup_script(plan);
+    let result = runtime
+        .exec_in_coast(container_id, &["sh", "-lc", &script])
+        .await
+        .map_err(|error| {
+            CoastError::docker(format!(
+                "failed to configure shared-service proxies: {error}"
+            ))
+        })?;
+
+    if !result.success() {
+        let stdout = result.stdout.trim();
+        let stderr = result.stderr.trim();
+        let output = match (stdout.is_empty(), stderr.is_empty()) {
+            (false, false) => format!("stdout:\n{stdout}\n\nstderr:\n{stderr}"),
+            (false, true) => format!("stdout:\n{stdout}"),
+            (true, false) => format!("stderr:\n{stderr}"),
+            (true, true) => "no stdout/stderr captured".to_string(),
+        };
+        return Err(CoastError::docker(format!(
+            "failed to configure shared-service proxies (exit {}): {output}",
+            result.exit_code
+        )));
+    }
+
+    info!(
+        container_id = %container_id,
+        shared_service_count = plan.routes.len(),
+        "configured shared-service proxies inside dind"
+    );
+
+    Ok(())
+}
+
+fn resolve_docker0_cidr_output(stdout: &str) -> Result<(Ipv4Addr, u8)> {
+    let cidr = stdout
+        .split_whitespace()
+        .skip_while(|token| *token != "inet")
+        .nth(1)
+        .ok_or_else(|| {
+            CoastError::docker("failed to find docker0 IPv4 address inside dind".to_string())
+        })?;
+
+    let (ip_str, prefix_str) = cidr.split_once('/').ok_or_else(|| {
+        CoastError::docker(format!("failed to parse docker0 CIDR '{cidr}' inside dind"))
+    })?;
+
+    let ip = ip_str.parse::<Ipv4Addr>().map_err(|error| {
+        CoastError::docker(format!("failed to parse docker0 IP '{ip_str}': {error}"))
+    })?;
+    let prefix_len = prefix_str.parse::<u8>().map_err(|error| {
+        CoastError::docker(format!(
+            "failed to parse docker0 prefix length '{prefix_str}': {error}"
+        ))
+    })?;
+
+    if prefix_len > 32 {
+        return Err(CoastError::docker(format!(
+            "invalid docker0 prefix length '{prefix_len}' inside dind"
+        )));
+    }
+
+    Ok((ip, prefix_len))
+}
+
+async fn resolve_docker0_cidr(
+    docker: &bollard::Docker,
+    container_id: &str,
+) -> Result<(Ipv4Addr, u8)> {
+    let runtime = coast_docker::dind::DindRuntime::with_client(docker.clone());
+    let result = runtime
+        .exec_in_coast(container_id, &["sh", "-lc", "ip -o -4 addr show docker0"])
+        .await
+        .map_err(|error| {
+            CoastError::docker(format!("failed to inspect docker0 inside dind: {error}"))
+        })?;
+
+    if !result.success() {
+        return Err(CoastError::docker(format!(
+            "failed to inspect docker0 inside dind: {}",
+            result.stderr.trim()
+        )));
+    }
+
+    resolve_docker0_cidr_output(&result.stdout)
+}
+
+fn build_routing_plan(
+    shared_services: &[SharedServiceConfig],
+    target_containers: &HashMap<String, String>,
+    docker0_ip: Ipv4Addr,
+    docker0_prefix_len: u8,
+) -> Result<SharedServiceRoutingPlan> {
+    let mut services: Vec<_> = shared_services.iter().collect();
+    services.sort_by(|left, right| left.name.cmp(&right.name));
+
+    let mut routes = Vec::with_capacity(services.len());
+    for (index, service) in services.into_iter().enumerate() {
+        let target_container = target_containers
+            .get(&service.name)
+            .cloned()
+            .ok_or_else(|| {
+                CoastError::docker(format!(
+                    "missing shared-service target container for '{}'",
+                    service.name
+                ))
+            })?;
+
+        routes.push(SharedServiceRoute {
+            service_name: service.name.clone(),
+            alias_ip: allocate_alias_ip(docker0_ip, docker0_prefix_len, index)?,
+            target_container,
+            ports: dedupe_container_ports(&service.ports),
+        });
+    }
+
+    Ok(SharedServiceRoutingPlan {
+        docker0_prefix_len,
+        routes,
+    })
+}
+
+fn dedupe_container_ports(ports: &[SharedServicePort]) -> Vec<SharedServicePort> {
+    let mut deduped: Vec<SharedServicePort> = Vec::new();
+
+    for port in ports {
+        if deduped
+            .iter()
+            .any(|existing| existing.container_port == port.container_port)
+        {
+            continue;
+        }
+        deduped.push(*port);
+    }
+
+    deduped
+}
+
+fn allocate_alias_ip(docker0_ip: Ipv4Addr, prefix_len: u8, index: usize) -> Result<Ipv4Addr> {
+    let host_bits = 32_u32.saturating_sub(u32::from(prefix_len));
+    let usable_hosts = if host_bits == 0 {
+        0
+    } else {
+        (1_u64 << host_bits).saturating_sub(2)
+    };
+
+    if usable_hosts == 0 || index as u64 >= usable_hosts.saturating_sub(1) {
+        return Err(CoastError::docker(format!(
+            "docker0 subnet {docker0_ip}/{prefix_len} does not have enough room for shared-service aliases"
+        )));
+    }
+
+    let mask = if prefix_len == 0 {
+        0
+    } else {
+        u32::MAX << (32 - u32::from(prefix_len))
+    };
+    let ip_u32 = u32::from(docker0_ip);
+    let network = ip_u32 & mask;
+    let broadcast = network | !mask;
+
+    // Allocate from the top of the subnet downward to stay away from Docker's
+    // low-address allocations for bridge gateways and containers.
+    let alias = broadcast.checked_sub(1 + index as u32).ok_or_else(|| {
+        CoastError::docker("failed to allocate shared-service alias IP".to_string())
+    })?;
+
+    Ok(Ipv4Addr::from(alias))
+}
+
+fn build_proxy_setup_script(plan: &SharedServiceRoutingPlan) -> String {
+    let mut script = String::from(
+        "set -eu\n\
+         if ! command -v socat >/dev/null 2>&1; then\n\
+           if command -v apk >/dev/null 2>&1; then\n\
+             apk add --no-cache socat >/dev/null\n\
+           elif command -v apt-get >/dev/null 2>&1; then\n\
+             apt-get update >/dev/null && DEBIAN_FRONTEND=noninteractive apt-get install -y socat >/dev/null\n\
+           else\n\
+             echo 'socat is required to proxy shared services inside the Coast container' >&2\n\
+             exit 1\n\
+           fi\n\
+         fi\n\
+         SOCAT_BIN=\"$(command -v socat)\"\n\
+         mkdir -p /var/run/coast/shared-service-proxies /var/log/coast/shared-service-proxies\n",
+    );
+
+    for route in &plan.routes {
+        let alias_ip = route.alias_ip.to_string();
+        let alias_cidr = format!("{alias_ip}/{}", plan.docker0_prefix_len);
+        let alias_cidr = shell_quote(&alias_cidr);
+        let alias_check = shell_quote(&format!("{alias_ip}/"));
+
+        let _ = writeln!(
+            script,
+            "ip addr add {alias_cidr} dev docker0 2>/dev/null || true"
+        );
+
+        for port in &route.ports {
+            let listen_addr = format!(
+                "TCP-LISTEN:{},bind={},fork,reuseaddr",
+                port.container_port, alias_ip
+            );
+            let upstream_addr = format!("TCP:{}:{}", route.target_container, port.container_port);
+            let log_path = format!(
+                "/var/log/coast/shared-service-proxies/{}-{}.log",
+                route.service_name, port.container_port
+            );
+            let pid_path = format!(
+                "/var/run/coast/shared-service-proxies/{}-{}.pid",
+                route.service_name, port.container_port
+            );
+
+            let _ = writeln!(
+                script,
+                "if [ -f {} ]; then old_pid=\"$(cat {} 2>/dev/null || true)\"; \
+                 if [ -n \"$old_pid\" ] && kill -0 \"$old_pid\" 2>/dev/null; then \
+                 kill \"$old_pid\" 2>/dev/null || true; fi; fi",
+                shell_quote(&pid_path),
+                shell_quote(&pid_path),
+            );
+            let _ = writeln!(
+                script,
+                "nohup \"$SOCAT_BIN\" {} {} > {} 2>&1 < /dev/null & echo $! > {}",
+                shell_quote(&listen_addr),
+                shell_quote(&upstream_addr),
+                shell_quote(&log_path),
+                shell_quote(&pid_path),
+            );
+        }
+
+        let _ = writeln!(
+            script,
+            "ip -o -4 addr show dev docker0 | grep -q {}",
+            alias_check
+        );
+    }
+
+    script
+}
+
+fn shell_quote(input: &str) -> String {
+    format!("'{}'", input.replace('\'', r"'\''"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_resolve_docker0_cidr_output_parses_ip_and_prefix() {
+        let output = "6: docker0    inet 172.17.0.1/16 brd 172.17.255.255 scope global docker0";
+        let (ip, prefix) = resolve_docker0_cidr_output(output).unwrap();
+
+        assert_eq!(ip, Ipv4Addr::new(172, 17, 0, 1));
+        assert_eq!(prefix, 16);
+    }
+
+    #[test]
+    fn test_allocate_alias_ip_uses_high_addresses() {
+        let first = allocate_alias_ip(Ipv4Addr::new(172, 17, 0, 1), 16, 0).unwrap();
+        let second = allocate_alias_ip(Ipv4Addr::new(172, 17, 0, 1), 16, 1).unwrap();
+
+        assert_eq!(first, Ipv4Addr::new(172, 17, 255, 254));
+        assert_eq!(second, Ipv4Addr::new(172, 17, 255, 253));
+    }
+
+    #[test]
+    fn test_build_routing_plan_is_deterministic_by_service_name() {
+        let shared_services = vec![
+            SharedServiceConfig {
+                name: "redis-db".to_string(),
+                image: "redis:7".to_string(),
+                ports: vec![SharedServicePort::same(6379)],
+                volumes: vec![],
+                env: HashMap::new(),
+                auto_create_db: false,
+                inject: None,
+            },
+            SharedServiceConfig {
+                name: "db".to_string(),
+                image: "postgres:16".to_string(),
+                ports: vec![SharedServicePort::same(5432)],
+                volumes: vec![],
+                env: HashMap::new(),
+                auto_create_db: false,
+                inject: None,
+            },
+        ];
+        let targets = HashMap::from([
+            ("db".to_string(), "shared-db".to_string()),
+            ("redis-db".to_string(), "shared-redis".to_string()),
+        ]);
+
+        let plan = build_routing_plan(&shared_services, &targets, Ipv4Addr::new(172, 17, 0, 1), 16)
+            .unwrap();
+
+        assert_eq!(plan.routes[0].service_name, "db");
+        assert_eq!(plan.routes[0].alias_ip, Ipv4Addr::new(172, 17, 255, 254));
+        assert_eq!(plan.routes[1].service_name, "redis-db");
+        assert_eq!(plan.routes[1].alias_ip, Ipv4Addr::new(172, 17, 255, 253));
+    }
+
+    #[test]
+    fn test_build_proxy_setup_script_binds_alias_ips() {
+        let plan = SharedServiceRoutingPlan {
+            docker0_prefix_len: 16,
+            routes: vec![SharedServiceRoute {
+                service_name: "postgis-db".to_string(),
+                alias_ip: Ipv4Addr::new(172, 17, 255, 254),
+                target_container: "yc-shared-services-postgis-db".to_string(),
+                ports: vec![SharedServicePort::new(5433, 5432)],
+            }],
+        };
+
+        let script = build_proxy_setup_script(&plan);
+
+        assert!(script.contains("command -v socat"));
+        assert!(script.contains("apk add --no-cache socat"));
+        assert!(script.contains("ip addr add '172.17.255.254/16' dev docker0"));
+        assert!(script.contains("TCP-LISTEN:5432,bind=172.17.255.254,fork,reuseaddr"));
+        assert!(script.contains("TCP:yc-shared-services-postgis-db:5432"));
+    }
+
+    #[test]
+    fn test_dedupe_container_ports_keeps_first_mapping_for_each_container_port() {
+        let deduped = dedupe_container_ports(&[
+            SharedServicePort::new(5433, 5432),
+            SharedServicePort::new(6433, 5432),
+            SharedServicePort::same(6379),
+        ]);
+
+        assert_eq!(
+            deduped,
+            vec![
+                SharedServicePort::new(5433, 5432),
+                SharedServicePort::same(6379),
+            ]
+        );
+    }
+}

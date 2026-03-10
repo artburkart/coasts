@@ -213,7 +213,11 @@ pub fn generate_shared_service_override(
                     .map(std::string::String::as_str)
                     .unwrap_or("localhost");
 
-                let port = service.ports.first().copied().unwrap_or(5432);
+                let port = service
+                    .ports
+                    .first()
+                    .map(|port| port.host_port)
+                    .unwrap_or(5432);
                 let db_name = format!("{instance_name}_{project_name}");
 
                 let connection_url = build_connection_url(&service.image, host, port, &db_name);
@@ -291,7 +295,7 @@ pub fn extract_compose_services(yaml_content: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use coast_core::types::InjectType;
+    use coast_core::types::{InjectType, SharedServicePort};
 
     #[test]
     fn test_compose_base_args_docker() {
@@ -386,7 +390,7 @@ mod tests {
             SharedServiceConfig {
                 name: "postgres".to_string(),
                 image: "postgres:16".to_string(),
-                ports: vec![5432],
+                ports: vec![SharedServicePort::same(5432)],
                 volumes: vec![],
                 env: HashMap::new(),
                 auto_create_db: true,
@@ -395,7 +399,7 @@ mod tests {
             SharedServiceConfig {
                 name: "redis".to_string(),
                 image: "redis:7".to_string(),
-                ports: vec![6379],
+                ports: vec![SharedServicePort::same(6379)],
                 volumes: vec![],
                 env: HashMap::new(),
                 auto_create_db: false,
@@ -426,7 +430,7 @@ mod tests {
         let shared = vec![SharedServiceConfig {
             name: "postgres".to_string(),
             image: "postgres:16".to_string(),
-            ports: vec![5432],
+            ports: vec![SharedServicePort::same(5432)],
             volumes: vec![],
             env: HashMap::new(),
             auto_create_db: true,
@@ -452,7 +456,7 @@ mod tests {
         let shared = vec![SharedServiceConfig {
             name: "redis".to_string(),
             image: "redis:7".to_string(),
-            ports: vec![6379],
+            ports: vec![SharedServicePort::same(6379)],
             volumes: vec![],
             env: HashMap::new(),
             auto_create_db: false,
@@ -473,7 +477,7 @@ mod tests {
         let shared = vec![SharedServiceConfig {
             name: "secret-svc".to_string(),
             image: "custom:latest".to_string(),
-            ports: vec![8080],
+            ports: vec![SharedServicePort::same(8080)],
             volumes: vec![],
             env: HashMap::new(),
             auto_create_db: false,
@@ -495,7 +499,7 @@ mod tests {
         let shared = vec![SharedServiceConfig {
             name: "postgres".to_string(),
             image: "postgres:16".to_string(),
-            ports: vec![5432],
+            ports: vec![SharedServicePort::same(5432)],
             volumes: vec![],
             env: HashMap::new(),
             auto_create_db: true,
@@ -530,7 +534,7 @@ mod tests {
             SharedServiceConfig {
                 name: "postgres".to_string(),
                 image: "postgres:16".to_string(),
-                ports: vec![5432],
+                ports: vec![SharedServicePort::same(5432)],
                 volumes: vec![],
                 env: HashMap::new(),
                 auto_create_db: true,
@@ -539,7 +543,7 @@ mod tests {
             SharedServiceConfig {
                 name: "redis".to_string(),
                 image: "redis:7".to_string(),
-                ports: vec![6379],
+                ports: vec![SharedServicePort::same(6379)],
                 volumes: vec![],
                 env: HashMap::new(),
                 auto_create_db: false,

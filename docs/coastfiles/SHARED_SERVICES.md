@@ -21,7 +21,8 @@ The Docker image to run on the host daemon.
 
 ### `ports`
 
-List of ports the service exposes. Used for bridge network routing between the shared service and Coast instances.
+List of ports the service exposes. Coast accepts either bare container ports or
+Docker Compose-style `"HOST:CONTAINER"` mappings.
 
 ```toml
 [shared_services.redis]
@@ -29,7 +30,16 @@ image = "redis:7-alpine"
 ports = [6379]
 ```
 
-Port values must be non-zero.
+```toml
+[shared_services.postgis]
+image = "ghcr.io/baosystems/postgis:12-3.3"
+ports = ["5433:5432"]
+```
+
+- A bare integer like `6379` is shorthand for `"6379:6379"`.
+- A mapped string like `"5433:5432"` publishes the shared service on host port
+  `5433` while keeping it reachable inside Coasts at `service-name:5432`.
+- Host and container ports must both be non-zero.
 
 ### `volumes`
 
@@ -117,6 +127,15 @@ env = { MONGO_INITDB_ROOT_USERNAME = "myapp", MONGO_INITDB_ROOT_PASSWORD = "myap
 [shared_services.postgres]
 image = "postgres:16-alpine"
 ports = [5432]
+env = { POSTGRES_USER = "coast", POSTGRES_PASSWORD = "coast", POSTGRES_DB = "coast_demo" }
+```
+
+### Host/container mapped shared Postgres
+
+```toml
+[shared_services.postgres]
+image = "postgres:16-alpine"
+ports = ["5433:5432"]
 env = { POSTGRES_USER = "coast", POSTGRES_PASSWORD = "coast", POSTGRES_DB = "coast_demo" }
 ```
 

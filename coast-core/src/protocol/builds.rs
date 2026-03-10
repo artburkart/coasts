@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use super::query::InstanceSummary;
+use crate::types::SharedServicePort;
 
 /// Request to inspect build artifacts.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -121,7 +122,7 @@ pub struct SharedServiceBuildInfo {
     pub name: String,
     pub image: String,
     #[serde(default)]
-    pub ports: Vec<u16>,
+    pub ports: Vec<SharedServicePort>,
     #[serde(default)]
     pub auto_create_db: bool,
 }

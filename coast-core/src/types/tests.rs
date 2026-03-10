@@ -237,7 +237,7 @@ fn test_shared_service_config_serialization() {
     let config = SharedServiceConfig {
         name: "postgres".to_string(),
         image: "postgres:16".to_string(),
-        ports: vec![5432],
+        ports: vec![SharedServicePort::same(5432)],
         volumes: vec!["coast_shared_pg:/var/lib/postgresql/data".to_string()],
         env,
         auto_create_db: true,
@@ -251,6 +251,7 @@ fn test_shared_service_config_serialization() {
         deserialized.inject,
         Some(InjectType::Env("DATABASE_URL".to_string()))
     );
+    assert_eq!(deserialized.ports, vec![SharedServicePort::same(5432)]);
 }
 
 #[test]

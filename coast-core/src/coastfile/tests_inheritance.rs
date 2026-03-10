@@ -1,4 +1,5 @@
 use super::*;
+use crate::types::SharedServicePort;
 
 #[test]
 fn test_extends_basic() {
@@ -720,6 +721,35 @@ args = ["-y", "@upstash/context7-mcp"]
     );
     assert_eq!(reparsed.mcp_servers.len(), original.mcp_servers.len());
     assert_eq!(reparsed.mcp_clients.len(), original.mcp_clients.len());
+}
+
+#[test]
+fn test_standalone_roundtrip_preserves_mapped_shared_service_ports() {
+    let dir = tempfile::tempdir().unwrap();
+    let coastfile = Coastfile::parse(
+        r#"
+[coast]
+name = "my-app"
+compose = "./docker-compose.yml"
+
+[shared_services.postgis-db]
+image = "ghcr.io/baosystems/postgis:12-3.3"
+ports = ["5433:5432", 6432]
+"#,
+        dir.path(),
+    )
+    .unwrap();
+
+    let standalone = coastfile.to_standalone_toml();
+    let reparsed = Coastfile::parse(&standalone, dir.path()).unwrap();
+
+    assert_eq!(
+        reparsed.shared_services[0].ports,
+        vec![
+            SharedServicePort::new(5433, 5432),
+            SharedServicePort::same(6432),
+        ]
+    );
 }
 
 #[test]

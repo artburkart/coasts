@@ -13,7 +13,7 @@ use coast_core::protocol::{
     DockerImageInfo, InstanceSummary, McpBuildInfo, McpClientBuildInfo, SharedServiceBuildInfo,
     VolumeBuildInfo,
 };
-use coast_core::types::InstanceStatus;
+use coast_core::types::{InstanceStatus, SharedServicePort};
 
 use crate::server::AppState;
 
@@ -279,11 +279,7 @@ fn extract_shared_services(manifest: &serde_json::Value) -> Vec<SharedServiceBui
                         ports: item
                             .get("ports")
                             .and_then(|p| p.as_array())
-                            .map(|a| {
-                                a.iter()
-                                    .filter_map(|v| v.as_u64().map(|n| n as u16))
-                                    .collect()
-                            })
+                            .map(|a| a.iter().filter_map(parse_shared_service_port).collect())
                             .unwrap_or_default(),
                         auto_create_db: item
                             .get("auto_create_db")
@@ -294,6 +290,17 @@ fn extract_shared_services(manifest: &serde_json::Value) -> Vec<SharedServiceBui
                 .collect()
         })
         .unwrap_or_default()
+}
+
+fn parse_shared_service_port(value: &serde_json::Value) -> Option<SharedServicePort> {
+    if let Some(port) = value.as_u64().and_then(|n| u16::try_from(n).ok()) {
+        return Some(SharedServicePort::same(port));
+    }
+
+    Some(SharedServicePort::new(
+        u16::try_from(value.get("host_port")?.as_u64()?).ok()?,
+        u16::try_from(value.get("container_port")?.as_u64()?).ok()?,
+    ))
 }
 
 fn extract_volumes(manifest: &serde_json::Value) -> Vec<VolumeBuildInfo> {

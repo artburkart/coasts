@@ -3,14 +3,12 @@ use std::collections::HashMap;
 use tracing::info;
 
 use coast_core::error::{CoastError, Result};
-use coast_core::types::SharedServiceConfig;
+use coast_core::types::{SharedServiceConfig, SharedServicePort};
 
 use crate::server::AppState;
 
 /// Result of starting shared services on the host daemon.
 pub(super) struct SharedServicesResult {
-    pub service_names: Vec<String>,
-    #[allow(dead_code)]
     pub service_hosts: std::collections::HashMap<String, String>,
     pub network_name: Option<String>,
 }
@@ -31,7 +29,6 @@ pub(super) async fn start_shared_services(
     docker: &bollard::Docker,
     state: &AppState,
 ) -> Result<SharedServicesResult> {
-    let mut service_names = Vec::new();
     let mut service_hosts = HashMap::new();
 
     let nm = coast_docker::network::NetworkManager::with_client(docker.clone());
@@ -52,12 +49,10 @@ pub(super) async fn start_shared_services(
         )
         .await?;
 
-        service_names.push(svc_config.name.clone());
         service_hosts.insert(svc_config.name.clone(), container_name);
     }
 
     Ok(SharedServicesResult {
-        service_names,
         service_hosts,
         network_name: Some(network_name),
     })
@@ -190,25 +185,26 @@ async fn create_shared_service_container(
 }
 
 fn build_port_bindings(
-    ports: &[u16],
+    ports: &[SharedServicePort],
 ) -> HashMap<String, Option<Vec<bollard::models::PortBinding>>> {
     let mut port_bindings = HashMap::new();
     for port in ports {
-        port_bindings.insert(
-            format!("{port}/tcp"),
-            Some(vec![bollard::models::PortBinding {
+        port_bindings
+            .entry(format!("{}/tcp", port.container_port))
+            .or_insert_with(|| Some(Vec::new()))
+            .get_or_insert_with(Vec::new)
+            .push(bollard::models::PortBinding {
                 host_ip: Some("0.0.0.0".to_string()),
-                host_port: Some(port.to_string()),
-            }]),
-        );
+                host_port: Some(port.host_port.to_string()),
+            });
     }
     port_bindings
 }
 
-fn build_exposed_ports(ports: &[u16]) -> HashMap<String, HashMap<(), ()>> {
+fn build_exposed_ports(ports: &[SharedServicePort]) -> HashMap<String, HashMap<(), ()>> {
     let mut exposed_ports = HashMap::new();
     for port in ports {
-        exposed_ports.insert(format!("{port}/tcp"), HashMap::new());
+        exposed_ports.insert(format!("{}/tcp", port.container_port), HashMap::new());
     }
     exposed_ports
 }
@@ -269,7 +265,11 @@ async fn record_shared_service_running(
 ///   "...Bind for 0.0.0.0:6379 failed: port is already allocated"
 ///
 /// We extract the port number and tell the user what's actually wrong.
-fn humanize_port_conflict(raw: &str, service_name: &str, declared_ports: &[u16]) -> Option<String> {
+fn humanize_port_conflict(
+    raw: &str,
+    service_name: &str,
+    declared_ports: &[SharedServicePort],
+) -> Option<String> {
     if !raw.contains("port is already allocated") {
         return None;
     }
@@ -285,7 +285,7 @@ fn humanize_port_conflict(raw: &str, service_name: &str, declared_ports: &[u16])
     let port_display = port.map(|p| p.to_string()).unwrap_or_else(|| {
         declared_ports
             .iter()
-            .map(std::string::ToString::to_string)
+            .map(|port| port.host_port.to_string())
             .collect::<Vec<_>>()
             .join(", ")
     });
@@ -316,7 +316,8 @@ mod tests {
 
     #[test]
     fn test_build_port_bindings_maps_all_declared_ports() {
-        let port_bindings = build_port_bindings(&[5432, 6379]);
+        let port_bindings =
+            build_port_bindings(&[SharedServicePort::same(5432), SharedServicePort::same(6379)]);
 
         assert_eq!(port_bindings.len(), 2);
         let postgres = port_bindings
@@ -337,7 +338,8 @@ mod tests {
 
     #[test]
     fn test_build_exposed_ports_maps_all_declared_ports() {
-        let exposed_ports = build_exposed_ports(&[5432, 6379]);
+        let exposed_ports =
+            build_exposed_ports(&[SharedServicePort::same(5432), SharedServicePort::same(6379)]);
 
         assert_eq!(exposed_ports.len(), 2);
         assert!(exposed_ports.contains_key("5432/tcp"));
@@ -346,9 +348,44 @@ mod tests {
     }
 
     #[test]
+    fn test_build_port_bindings_and_exposed_ports_use_container_ports_for_mappings() {
+        let mapping = SharedServicePort::new(5433, 5432);
+        let port_bindings = build_port_bindings(&[mapping]);
+        let exposed_ports = build_exposed_ports(&[mapping]);
+
+        let binding = port_bindings
+            .get("5432/tcp")
+            .and_then(|bindings| bindings.as_ref())
+            .and_then(|bindings| bindings.first())
+            .unwrap();
+
+        assert_eq!(binding.host_port.as_deref(), Some("5433"));
+        assert!(exposed_ports.contains_key("5432/tcp"));
+        assert!(!exposed_ports.contains_key("5433/tcp"));
+    }
+
+    #[test]
+    fn test_build_port_bindings_keeps_multiple_host_ports_for_same_container_port() {
+        let port_bindings = build_port_bindings(&[
+            SharedServicePort::new(5433, 5432),
+            SharedServicePort::new(6433, 5432),
+        ]);
+
+        let bindings = port_bindings
+            .get("5432/tcp")
+            .and_then(|bindings| bindings.as_ref())
+            .unwrap();
+
+        assert_eq!(bindings.len(), 2);
+        assert_eq!(bindings[0].host_port.as_deref(), Some("5433"));
+        assert_eq!(bindings[1].host_port.as_deref(), Some("6433"));
+    }
+
+    #[test]
     fn test_humanize_port_conflict_extracts_specific_bound_port() {
         let raw = "driver failed programming external connectivity on endpoint foo: Bind for 0.0.0.0:6379 failed: port is already allocated";
-        let message = humanize_port_conflict(raw, "redis", &[6379]).unwrap();
+        let message =
+            humanize_port_conflict(raw, "redis", &[SharedServicePort::same(6379)]).unwrap();
 
         assert!(message.contains("Port 6379 is already in use on the host."));
         assert!(message.contains("shared service 'redis'"));
@@ -358,13 +395,26 @@ mod tests {
     #[test]
     fn test_humanize_port_conflict_falls_back_to_declared_ports_when_bind_is_missing() {
         let raw = "failed to start container: port is already allocated";
-        let message = humanize_port_conflict(raw, "postgres", &[5432, 6432]).unwrap();
+        let message = humanize_port_conflict(
+            raw,
+            "postgres",
+            &[
+                SharedServicePort::new(5433, 5432),
+                SharedServicePort::same(6432),
+            ],
+        )
+        .unwrap();
 
-        assert!(message.contains("Port 5432, 6432 is already in use on the host."));
+        assert!(message.contains("Port 5433, 6432 is already in use on the host."));
     }
 
     #[test]
     fn test_humanize_port_conflict_ignores_other_errors() {
-        assert!(humanize_port_conflict("permission denied", "redis", &[6379]).is_none());
+        assert!(humanize_port_conflict(
+            "permission denied",
+            "redis",
+            &[SharedServicePort::same(6379)],
+        )
+        .is_none());
     }
 }

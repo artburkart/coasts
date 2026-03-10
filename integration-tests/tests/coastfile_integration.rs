@@ -182,6 +182,34 @@ ports = [6379]
     assert!(redis_svc.inject.is_none());
 }
 
+#[test]
+fn test_parse_shared_service_mapped_ports_integration() {
+    let toml = r#"
+[coast]
+name = "mapped-shared-service-app"
+compose = "./docker-compose.yml"
+
+[shared_services.postgis]
+image = "ghcr.io/baosystems/postgis:12-3.3"
+ports = ["5433:5432", 6432]
+"#;
+
+    let coastfile = Coastfile::parse(toml, Path::new("/tmp/project")).unwrap();
+    let postgis = coastfile
+        .shared_services
+        .iter()
+        .find(|service| service.name == "postgis")
+        .unwrap();
+
+    assert_eq!(
+        postgis.ports,
+        vec![
+            SharedServicePort::new(5433, 5432),
+            SharedServicePort::same(6432),
+        ]
+    );
+}
+
 // ---------------------------------------------------------------------------
 // Coastfile error handling
 // ---------------------------------------------------------------------------

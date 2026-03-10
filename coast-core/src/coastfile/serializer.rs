@@ -5,13 +5,21 @@
 /// files are not available.
 use std::fmt::Write;
 
-use crate::types::{InjectType, RestartPolicy, VolumeStrategy};
+use crate::types::{InjectType, RestartPolicy, SharedServicePort, VolumeStrategy};
 
 use super::Coastfile;
 
 /// Produce a TOML-safe quoted string value.
 pub(super) fn toml_quote(s: &str) -> String {
     format!("{:?}", s)
+}
+
+fn format_shared_service_port(port: &SharedServicePort) -> String {
+    if port.is_identity_mapping() {
+        port.host_port.to_string()
+    } else {
+        toml_quote(&port.to_string())
+    }
 }
 
 impl Coastfile {
@@ -108,7 +116,7 @@ impl Coastfile {
                     "ports = [{}]",
                     svc.ports
                         .iter()
-                        .map(std::string::ToString::to_string)
+                        .map(format_shared_service_port)
                         .collect::<Vec<_>>()
                         .join(", ")
                 )

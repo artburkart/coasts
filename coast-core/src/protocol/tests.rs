@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use crate::types::{InstanceStatus, PortMapping, RuntimeType};
+use crate::types::{InstanceStatus, PortMapping, RuntimeType, SharedServicePort};
 
 use super::*;
 
@@ -806,7 +806,7 @@ fn test_builds_inspect_response_roundtrip() {
             shared_services: vec![SharedServiceBuildInfo {
                 name: "postgres".to_string(),
                 image: "postgres:15".to_string(),
-                ports: vec![5432],
+                ports: vec![SharedServicePort::same(5432)],
                 auto_create_db: false,
             }],
             volumes: vec![VolumeBuildInfo {

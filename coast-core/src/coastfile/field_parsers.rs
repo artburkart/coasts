@@ -6,7 +6,7 @@ use crate::error::{CoastError, Result};
 use crate::types::{
     AssignAction, AssignConfig, BareServiceConfig, InjectType, McpClientConnectorConfig,
     McpClientFormat, McpProxyMode, McpServerConfig, RestartPolicy, SecretConfig, SetupFileConfig,
-    SharedServiceConfig, VolumeConfig, VolumeStrategy,
+    SharedServiceConfig, SharedServicePort, VolumeConfig, VolumeStrategy,
 };
 
 use super::raw_types::*;
@@ -148,18 +148,16 @@ impl Coastfile {
                 None => None,
             };
 
-            for port in &raw.ports {
-                if *port == 0 {
-                    return Err(CoastError::coastfile(format!(
-                        "shared_service '{name}': port 0 is not valid"
-                    )));
-                }
-            }
+            let ports = raw
+                .ports
+                .into_iter()
+                .map(|port| Self::parse_shared_service_port(&name, port))
+                .collect::<Result<Vec<_>>>()?;
 
             services.push(SharedServiceConfig {
                 name,
                 image: raw.image,
-                ports: raw.ports,
+                ports,
                 volumes: raw.volumes,
                 env: raw.env,
                 auto_create_db: raw.auto_create_db,
@@ -168,6 +166,49 @@ impl Coastfile {
         }
 
         Ok(services)
+    }
+
+    fn parse_shared_service_port(
+        service_name: &str,
+        raw_port: RawSharedServicePort,
+    ) -> Result<SharedServicePort> {
+        match raw_port {
+            RawSharedServicePort::Single(port) => {
+                if port == 0 {
+                    Err(CoastError::coastfile(format!(
+                        "shared_service '{service_name}': port 0 is not valid"
+                    )))
+                } else {
+                    Ok(SharedServicePort::same(port))
+                }
+            }
+            RawSharedServicePort::Mapping(mapping) => {
+                let Some((host_port, container_port)) = mapping.split_once(':') else {
+                    return Err(CoastError::coastfile(format!(
+                        "shared_service '{service_name}': invalid port mapping '{mapping}'. Expected 'HOST:CONTAINER'"
+                    )));
+                };
+
+                let host_port = host_port.trim().parse::<u16>().map_err(|_| {
+                    CoastError::coastfile(format!(
+                        "shared_service '{service_name}': invalid host port in mapping '{mapping}'"
+                    ))
+                })?;
+                let container_port = container_port.trim().parse::<u16>().map_err(|_| {
+                    CoastError::coastfile(format!(
+                        "shared_service '{service_name}': invalid container port in mapping '{mapping}'"
+                    ))
+                })?;
+
+                if host_port == 0 || container_port == 0 {
+                    return Err(CoastError::coastfile(format!(
+                        "shared_service '{service_name}': port 0 is not valid"
+                    )));
+                }
+
+                Ok(SharedServicePort::new(host_port, container_port))
+            }
+        }
     }
 
     pub(super) fn parse_mcp_servers(

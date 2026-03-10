@@ -1,9 +1,14 @@
+use std::collections::HashMap;
+
 use tracing::{info, warn};
 
 use coast_core::error::{CoastError, Result};
 use coast_core::protocol::{BuildProgressEvent, RunRequest};
 use coast_docker::runtime::Runtime;
 
+use crate::handlers::shared_service_routing::{
+    ensure_shared_service_proxies, plan_shared_service_routing,
+};
 use crate::server::AppState;
 
 use super::service_start::{start_and_wait_for_services, StartServicesRequest};
@@ -23,7 +28,8 @@ struct CoastfileResources {
     volume_mounts: Vec<coast_docker::runtime::VolumeMount>,
     mcp_servers: Vec<coast_core::types::McpServerConfig>,
     mcp_clients: Vec<coast_core::types::McpClientConnectorConfig>,
-    shared_service_names: Vec<String>,
+    shared_services: Vec<coast_core::types::SharedServiceConfig>,
+    shared_service_targets: HashMap<String, String>,
     shared_network: Option<String>,
 }
 
@@ -52,23 +58,6 @@ pub(super) async fn provision_instance(
     let secret_files_for_exec = secret_plan.files_for_exec.clone();
     let has_volume_mounts = !resources.volume_mounts.is_empty();
 
-    let bridge_gateway_ip = resolve_bridge_gateway(docker).await;
-
-    if !uses_archive_build {
-        rewrite_compose(
-            &artifact_dir,
-            &code_path,
-            &coastfile_path,
-            &resources.shared_service_names,
-            &per_instance_image_tags,
-            has_volume_mounts,
-            bridge_gateway_ip.as_deref(),
-            &secret_container_paths,
-            &req.project,
-            &req.name,
-        );
-    }
-
     let container_id = create_container(
         docker,
         validated,
@@ -87,6 +76,43 @@ pub(super) async fn provision_instance(
     }
 
     connect_shared_network(state, &resources.shared_network, &container_id).await;
+
+    let shared_service_routing = if resources.shared_services.is_empty() {
+        None
+    } else {
+        Some(
+            plan_shared_service_routing(
+                docker,
+                &container_id,
+                &resources.shared_services,
+                &resources.shared_service_targets,
+            )
+            .await?,
+        )
+    };
+
+    if !uses_archive_build {
+        let shared_service_hosts = shared_service_routing.as_ref().map_or_else(
+            HashMap::new,
+            super::super::shared_service_routing::SharedServiceRoutingPlan::host_map,
+        );
+
+        rewrite_compose(
+            &artifact_dir,
+            &code_path,
+            &coastfile_path,
+            &shared_service_hosts,
+            &per_instance_image_tags,
+            has_volume_mounts,
+            &secret_container_paths,
+            &req.project,
+            &req.name,
+        );
+    }
+
+    if let Some(ref routing) = shared_service_routing {
+        ensure_shared_service_proxies(docker, &container_id, routing).await?;
+    }
 
     load_cached_images(docker, &container_id, &req.project, validated, progress).await;
 
@@ -269,7 +295,8 @@ async fn load_coastfile_resources(
         volume_mounts: Vec::new(),
         mcp_servers: Vec::new(),
         mcp_clients: Vec::new(),
-        shared_service_names: Vec::new(),
+        shared_services: Vec::new(),
+        shared_service_targets: HashMap::new(),
         shared_network: None,
     };
 
@@ -303,6 +330,7 @@ async fn load_coastfile_resources(
 
     result.mcp_servers = coastfile.mcp_servers.clone();
     result.mcp_clients = coastfile.mcp_clients.clone();
+    result.shared_services = coastfile.shared_services.clone();
 
     if !coastfile.shared_services.is_empty() {
         if let Some(ref docker) = state.docker {
@@ -313,7 +341,7 @@ async fn load_coastfile_resources(
                 state,
             )
             .await?;
-            result.shared_service_names = shared.service_names;
+            result.shared_service_targets = shared.service_hosts;
             result.shared_network = shared.network_name;
         }
     }
@@ -321,24 +349,13 @@ async fn load_coastfile_resources(
     Ok(result)
 }
 
-async fn resolve_bridge_gateway(docker: &bollard::Docker) -> Option<String> {
-    match coast_docker::network::resolve_bridge_gateway(docker).await {
-        Ok(gw) => Some(gw),
-        Err(e) => {
-            tracing::warn!(error = %e, "failed to resolve bridge gateway IP");
-            None
-        }
-    }
-}
-
 fn rewrite_compose(
     artifact_dir: &std::path::Path,
     code_path: &std::path::Path,
     coastfile_path: &std::path::Path,
-    shared_service_names: &[String],
+    shared_service_hosts: &HashMap<String, String>,
     per_instance_image_tags: &[(String, String)],
     has_volume_mounts: bool,
-    bridge_gateway_ip: Option<&str>,
     secret_container_paths: &[String],
     project: &str,
     instance_name: &str,
@@ -369,11 +386,10 @@ fn rewrite_compose(
     compose_rewrite::rewrite_compose_for_instance(
         content,
         &compose_rewrite::ComposeRewriteConfig {
-            shared_service_names,
+            shared_service_hosts,
             coastfile_path,
             per_instance_image_tags,
             has_volume_mounts,
-            bridge_gateway_ip,
             secret_container_paths,
             project,
             instance_name,
@@ -415,11 +431,12 @@ async fn create_container(
         .join("overrides")
         .join(&req.project)
         .join(&req.name);
-    let override_dir_opt = if override_dir_path.exists() {
-        Some(override_dir_path.as_path())
-    } else {
-        None
-    };
+    std::fs::create_dir_all(&override_dir_path).map_err(|error| CoastError::Io {
+        message: format!("failed to create override directory: {error}"),
+        path: override_dir_path.clone(),
+        source: Some(error),
+    })?;
+    let override_dir_opt = Some(override_dir_path.as_path());
 
     let dind_extra_hosts = vec!["host.docker.internal:host-gateway".to_string()];
 
@@ -818,7 +835,8 @@ mount = "/data"
 
         assert!(resources.mcp_servers.is_empty());
         assert!(resources.mcp_clients.is_empty());
-        assert!(resources.shared_service_names.is_empty());
+        assert!(resources.shared_services.is_empty());
+        assert!(resources.shared_service_targets.is_empty());
         assert!(resources.shared_network.is_none());
     }
 
@@ -838,7 +856,8 @@ mount = "/data"
         assert!(resources.volume_mounts.is_empty());
         assert!(resources.mcp_servers.is_empty());
         assert!(resources.mcp_clients.is_empty());
-        assert!(resources.shared_service_names.is_empty());
+        assert!(resources.shared_services.is_empty());
+        assert!(resources.shared_service_targets.is_empty());
         assert!(resources.shared_network.is_none());
     }
 
@@ -872,7 +891,8 @@ snapshot_source = "seed-volume"
         assert!(resources.volume_mounts.is_empty());
         assert!(resources.mcp_servers.is_empty());
         assert!(resources.mcp_clients.is_empty());
-        assert!(resources.shared_service_names.is_empty());
+        assert!(resources.shared_services.is_empty());
+        assert!(resources.shared_service_targets.is_empty());
         assert!(resources.shared_network.is_none());
     }
 }
