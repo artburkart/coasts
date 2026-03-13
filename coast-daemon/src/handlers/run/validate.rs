@@ -244,6 +244,45 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_validate_allows_same_name_in_different_projects() {
+        let db = StateDb::open_in_memory().unwrap();
+        let state = AppState::new_for_testing(db);
+        let progress = discard_progress();
+
+        let req_a = coast_core::protocol::RunRequest {
+            name: "main".to_string(),
+            project: "project-a".to_string(),
+            branch: None,
+            worktree: None,
+            build_id: None,
+            commit_sha: None,
+            coastfile_type: None,
+            force_remove_dangling: false,
+        };
+        let req_b = coast_core::protocol::RunRequest {
+            name: "main".to_string(),
+            project: "project-b".to_string(),
+            branch: None,
+            worktree: None,
+            build_id: None,
+            commit_sha: None,
+            coastfile_type: None,
+            force_remove_dangling: false,
+        };
+
+        validate_and_insert(&req_a, &state, &progress)
+            .await
+            .unwrap();
+        validate_and_insert(&req_b, &state, &progress)
+            .await
+            .unwrap();
+
+        let db = state.db.lock().await;
+        assert!(db.get_instance("project-a", "main").unwrap().is_some());
+        assert!(db.get_instance("project-b", "main").unwrap().is_some());
+    }
+
+    #[tokio::test]
     async fn test_validate_replaces_enqueued() {
         let db = StateDb::open_in_memory().unwrap();
         db.insert_instance(&CoastInstance {

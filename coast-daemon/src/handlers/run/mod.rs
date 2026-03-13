@@ -185,6 +185,14 @@ pub async fn handle(
 ) -> Result<RunResponse> {
     info!(name = %req.name, project = %req.project, branch = ?req.branch, "handling run request");
 
+    if state.docker.is_none() {
+        return Err(coast_core::error::CoastError::docker(
+            "Host Docker is not available. `coast run` requires a Docker-compatible host engine. \
+             If you use Docker contexts (OrbStack, Colima, Rancher Desktop, Docker Desktop), \
+             ensure coastd can resolve the active context and then restart the daemon.",
+        ));
+    }
+
     // Phase 1: Validate, resolve build_id, insert instance record
     let validated = validate::validate_and_insert(&req, state, &progress).await?;
 
@@ -287,7 +295,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_run_creates_instance() {
+    async fn test_run_without_docker_fails_before_inserting_instance() {
         let state = test_state();
         let req = RunRequest {
             name: "feature-oauth".to_string(),
@@ -301,81 +309,13 @@ mod tests {
         };
         let (tx, _rx) = tokio::sync::mpsc::channel(64);
         let result = handle(req, &state, tx).await;
-        assert!(result.is_ok());
-        let resp = result.unwrap();
-        assert_eq!(resp.name, "feature-oauth");
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("Host Docker is not available"));
 
-        // Verify in DB
         let db = state.db.lock().await;
         let instance = db.get_instance("my-app", "feature-oauth").unwrap();
-        assert!(instance.is_some());
-        let instance = instance.unwrap();
-        assert_eq!(instance.status, coast_core::types::InstanceStatus::Running);
-        assert_eq!(instance.branch, Some("feature/oauth".to_string()));
-    }
-
-    #[tokio::test]
-    async fn test_run_duplicate_instance_fails() {
-        let state = test_state();
-        let req = RunRequest {
-            name: "dup".to_string(),
-            project: "my-app".to_string(),
-            branch: None,
-            commit_sha: None,
-            worktree: None,
-            build_id: None,
-            coastfile_type: None,
-            force_remove_dangling: false,
-        };
-        let (tx, _rx) = tokio::sync::mpsc::channel(64);
-        let result = handle(req.clone(), &state, tx).await;
-        assert!(result.is_ok());
-
-        // Second run should fail
-        let req2 = RunRequest {
-            name: "dup".to_string(),
-            project: "my-app".to_string(),
-            branch: None,
-            commit_sha: None,
-            worktree: None,
-            build_id: None,
-            coastfile_type: None,
-            force_remove_dangling: false,
-        };
-        let (tx2, _rx2) = tokio::sync::mpsc::channel(64);
-        let result2 = handle(req2, &state, tx2).await;
-        assert!(result2.is_err());
-        let err = result2.unwrap_err().to_string();
-        assert!(err.contains("already exists"));
-    }
-
-    #[tokio::test]
-    async fn test_run_different_projects_same_name() {
-        let state = test_state();
-        let req1 = RunRequest {
-            name: "main".to_string(),
-            project: "project-a".to_string(),
-            branch: None,
-            commit_sha: None,
-            worktree: None,
-            build_id: None,
-            coastfile_type: None,
-            force_remove_dangling: false,
-        };
-        let req2 = RunRequest {
-            name: "main".to_string(),
-            project: "project-b".to_string(),
-            branch: None,
-            commit_sha: None,
-            worktree: None,
-            build_id: None,
-            coastfile_type: None,
-            force_remove_dangling: false,
-        };
-        let (tx1, _rx1) = tokio::sync::mpsc::channel(64);
-        assert!(handle(req1, &state, tx1).await.is_ok());
-        let (tx2, _rx2) = tokio::sync::mpsc::channel(64);
-        assert!(handle(req2, &state, tx2).await.is_ok());
+        assert!(instance.is_none());
     }
 
     #[test]
@@ -427,7 +367,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_run_with_force_remove_dangling_no_docker_succeeds() {
+    async fn test_run_with_force_remove_dangling_still_fails_without_docker() {
         let state = test_state();
         let req = RunRequest {
             name: "force-test".to_string(),
@@ -441,9 +381,9 @@ mod tests {
         };
         let (tx, _rx) = tokio::sync::mpsc::channel(64);
         let result = handle(req, &state, tx).await;
-        assert!(result.is_ok());
-        let resp = result.unwrap();
-        assert_eq!(resp.name, "force-test");
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("Host Docker is not available"));
     }
 
     #[test]
