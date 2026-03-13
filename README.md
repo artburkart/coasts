@@ -219,6 +219,13 @@ coast rm main
 coast rm feature-x
 ```
 
+## Contributors
+
+- [@jamiesunderland](https://github.com/jamiesunderland)
+- [@dahyman91](https://github.com/dahyman91)
+- [@agustif](https://github.com/agustif)
+- [@clarkerican](https://github.com/clarkerican)
+
 ## Original History
 
 
