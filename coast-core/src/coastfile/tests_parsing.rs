@@ -1,6 +1,6 @@
 use super::*;
 use crate::types::{InjectType, SharedServicePort, VolumeStrategy};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 fn sample_coastfile() -> &'static str {
     r#"
@@ -33,6 +33,10 @@ ttl = "1h"
 [inject]
 env = ["NODE_ENV", "DEBUG"]
 files = ["~/.ssh/id_ed25519", "~/.gitconfig"]
+
+[host_mounts.rule_packs]
+source = "../omai-packs"
+target = "/host-mounts/omai-packs"
 
 [volumes.postgres_data]
 strategy = "isolated"
@@ -122,6 +126,19 @@ fn test_parse_inject() {
 }
 
 #[test]
+fn test_parse_host_mounts() {
+    let root = Path::new("/tmp/project");
+    let coastfile = Coastfile::parse(sample_coastfile(), root).unwrap();
+
+    assert_eq!(coastfile.host_mounts.len(), 1);
+    let mount = &coastfile.host_mounts[0];
+    assert_eq!(mount.name, "rule_packs");
+    assert_eq!(mount.source, PathBuf::from("/tmp/project/../omai-packs"));
+    assert_eq!(mount.target, "/host-mounts/omai-packs");
+    assert!(mount.read_only);
+}
+
+#[test]
 fn test_parse_volumes() {
     let root = Path::new("/tmp/project");
     let coastfile = Coastfile::parse(sample_coastfile(), root).unwrap();
@@ -143,6 +160,62 @@ fn test_parse_volumes() {
         .unwrap();
     assert_eq!(seed.strategy, VolumeStrategy::Isolated);
     assert_eq!(seed.snapshot_source.as_deref(), Some("coast_seed_pg_data"));
+}
+
+#[test]
+fn test_host_mount_target_must_be_absolute() {
+    let toml = r#"
+[coast]
+name = "test"
+
+[host_mounts.packs]
+source = "../packs"
+target = "relative/path"
+"#;
+
+    let result = Coastfile::parse(toml, Path::new("/tmp/project"));
+    assert!(result.is_err());
+    let err = result.unwrap_err().to_string();
+    assert!(err.contains("must be an absolute container path"));
+}
+
+#[test]
+fn test_host_mount_reserved_target_rejected() {
+    let toml = r#"
+[coast]
+name = "test"
+
+[host_mounts.bad]
+source = "../packs"
+target = "/workspace/packs"
+"#;
+
+    let result = Coastfile::parse(toml, Path::new("/tmp/project"));
+    assert!(result.is_err());
+    let err = result.unwrap_err().to_string();
+    assert!(err.contains("reserved Coast path"));
+    assert!(err.contains("/workspace"));
+}
+
+#[test]
+fn test_host_mount_duplicate_target_rejected() {
+    let toml = r#"
+[coast]
+name = "test"
+
+[host_mounts.a]
+source = "../a"
+target = "/host-mounts/shared"
+
+[host_mounts.b]
+source = "../b"
+target = "/host-mounts/shared"
+"#;
+
+    let result = Coastfile::parse(toml, Path::new("/tmp/project"));
+    assert!(result.is_err());
+    let err = result.unwrap_err().to_string();
+    assert!(err.contains("must be unique"));
 }
 
 #[test]
@@ -1592,6 +1665,34 @@ fn test_resolve_worktree_dir_relative() {
     let root = Path::new("/projects/my-app");
     let resolved = Coastfile::resolve_worktree_dir(root, ".worktrees");
     assert_eq!(resolved, Path::new("/projects/my-app/.worktrees"));
+}
+
+#[test]
+fn test_resolve_host_path_relative() {
+    let root = Path::new("/projects/my-app");
+    let resolved = Coastfile::resolve_host_path(root, "../omai-packs");
+    assert_eq!(resolved, Path::new("/projects/my-app/../omai-packs"));
+}
+
+#[test]
+fn test_to_standalone_toml_preserves_absolute_paths() {
+    let toml = r#"
+[coast]
+name = "test"
+compose = "/opt/compose/docker-compose.yml"
+
+[host_mounts.packs]
+source = "/Users/example/omai-packs"
+target = "/host-mounts/omai-packs"
+"#;
+
+    let cf = Coastfile::parse(toml, Path::new("/tmp/project")).unwrap();
+    let standalone = cf.to_standalone_toml();
+
+    assert!(standalone.contains("compose = \"/opt/compose/docker-compose.yml\""));
+    assert!(standalone.contains("source = \"/Users/example/omai-packs\""));
+    assert!(!standalone.contains(".//Users/example/omai-packs"));
+    assert!(!standalone.contains(".//opt/compose/docker-compose.yml"));
 }
 
 #[test]

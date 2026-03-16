@@ -82,6 +82,7 @@ fn compute_coastfile_hash(coastfile_raw: &str, coastfile: &Coastfile) -> String 
     coastfile_raw.hash(&mut hasher);
     format!("{:?}", coastfile.ports).hash(&mut hasher);
     format!("{:?}", coastfile.secrets).hash(&mut hasher);
+    format!("{:?}", coastfile.host_mounts).hash(&mut hasher);
     format!("{:?}", coastfile.shared_services).hash(&mut hasher);
     format!("{:?}", coastfile.volumes).hash(&mut hasher);
     format!("{:?}", coastfile.setup).hash(&mut hasher);

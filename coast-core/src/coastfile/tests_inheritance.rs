@@ -1896,6 +1896,101 @@ services = ["worker"]
 }
 
 #[test]
+fn test_extends_merge_host_mounts_by_name() {
+    let dir = tempfile::tempdir().unwrap();
+    let base = r#"
+[coast]
+name = "base-host-mounts"
+
+[host_mounts.packs]
+source = "../omai-packs"
+target = "/host-mounts/omai-packs"
+
+[host_mounts.cache]
+source = "../shared-cache"
+target = "/host-mounts/shared-cache"
+"#;
+    let child = r#"
+[coast]
+extends = "Coastfile.base"
+
+[host_mounts.packs]
+source = "../omai-packs-fork"
+target = "/host-mounts/omai-packs"
+read_only = false
+"#;
+    std::fs::write(dir.path().join("Coastfile.base"), base).unwrap();
+    std::fs::write(dir.path().join("Coastfile"), child).unwrap();
+
+    let cf = Coastfile::from_file(&dir.path().join("Coastfile")).unwrap();
+    assert_eq!(cf.host_mounts.len(), 2);
+    let packs = cf.host_mounts.iter().find(|m| m.name == "packs").unwrap();
+    assert_eq!(packs.source, dir.path().join("../omai-packs-fork"));
+    assert!(!packs.read_only);
+}
+
+#[test]
+fn test_unset_removes_host_mounts() {
+    let dir = tempfile::tempdir().unwrap();
+    let base = r#"
+[coast]
+name = "base-host-mounts"
+
+[host_mounts.packs]
+source = "../omai-packs"
+target = "/host-mounts/omai-packs"
+
+[host_mounts.cache]
+source = "../shared-cache"
+target = "/host-mounts/shared-cache"
+"#;
+    let child = r#"
+[coast]
+extends = "Coastfile.base"
+
+[unset]
+host_mounts = ["cache"]
+"#;
+    std::fs::write(dir.path().join("Coastfile.base"), base).unwrap();
+    std::fs::write(dir.path().join("Coastfile"), child).unwrap();
+
+    let cf = Coastfile::from_file(&dir.path().join("Coastfile")).unwrap();
+    assert_eq!(cf.host_mounts.len(), 1);
+    assert_eq!(cf.host_mounts[0].name, "packs");
+}
+
+#[test]
+fn test_standalone_toml_roundtrip_with_host_mounts() {
+    let toml = r#"
+[coast]
+name = "host-mount-roundtrip"
+compose = "./docker-compose.yml"
+
+[host_mounts.packs]
+source = "../omai-packs"
+target = "/host-mounts/omai-packs"
+
+[host_mounts.cache]
+source = "/opt/shared-cache"
+target = "/host-mounts/shared-cache"
+read_only = false
+"#;
+    let dir = tempfile::tempdir().unwrap();
+    let cf = Coastfile::parse(toml, dir.path()).unwrap();
+    let standalone = cf.to_standalone_toml();
+    let reparsed = Coastfile::parse(&standalone, dir.path()).unwrap();
+
+    assert_eq!(reparsed.host_mounts.len(), 2);
+    let cache = reparsed
+        .host_mounts
+        .iter()
+        .find(|mount| mount.name == "cache")
+        .unwrap();
+    assert_eq!(cache.source, std::path::Path::new("/opt/shared-cache"));
+    assert!(!cache.read_only);
+}
+
+#[test]
 fn test_standalone_toml_roundtrip_with_services() {
     let toml = r#"
 [coast]

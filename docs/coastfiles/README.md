@@ -197,6 +197,7 @@ mount = "/data/db"
 | Page | Sections | What it covers |
 |------|----------|----------------|
 | [Project and Setup](PROJECT.md) | `[coast]`, `[coast.setup]` | Name, compose path, runtime, worktree dir, container setup |
+| [Host Mounts](HOST_MOUNTS.md) | `[host_mounts.*]` | Extra host directories bind-mounted into the Coast container |
 | [Worktree Directories](WORKTREE_DIR.md) | `worktree_dir`, `default_worktree_dir` | Local and external worktree dirs, tilde paths, Codex/Claude integration |
 | [Ports](PORTS.md) | `[ports]`, `[egress]` | Port forwarding, egress declarations, primary port |
 | [Volumes](VOLUMES.md) | `[volumes.*]` | Isolated, shared, and snapshot-seeded volume strategies |

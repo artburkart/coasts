@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 use ts_rs::TS;
 
 /// Container runtime type.
@@ -45,6 +46,16 @@ pub struct SetupConfig {
     pub files: Vec<SetupFileConfig>,
 }
 
+/// A host directory bind-mounted into the coast container at runtime.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct HostMountConfig {
+    pub name: String,
+    pub source: PathBuf,
+    pub target: String,
+    #[serde(default = "default_true")]
+    pub read_only: bool,
+}
+
 /// A file to materialize inside the coast image during `[coast.setup]`.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SetupFileConfig {
@@ -65,4 +76,8 @@ impl SetupConfig {
 pub struct HostInjectConfig {
     pub env: Vec<String>,
     pub files: Vec<String>,
+}
+
+const fn default_true() -> bool {
+    true
 }

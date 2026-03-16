@@ -18,8 +18,9 @@ use std::path::{Path, PathBuf};
 
 use crate::error::{CoastError, Result};
 use crate::types::{
-    AssignConfig, BareServiceConfig, HostInjectConfig, McpClientConnectorConfig, McpServerConfig,
-    OmitConfig, RuntimeType, SecretConfig, SetupConfig, SharedServiceConfig, VolumeConfig,
+    AssignConfig, BareServiceConfig, HostInjectConfig, HostMountConfig, McpClientConnectorConfig,
+    McpServerConfig, OmitConfig, RuntimeType, SecretConfig, SetupConfig, SharedServiceConfig,
+    VolumeConfig,
 };
 
 use raw_types::*;
@@ -44,6 +45,8 @@ pub struct Coastfile {
     pub secrets: Vec<SecretConfig>,
     /// Host injection config.
     pub inject: HostInjectConfig,
+    /// Extra host directories bind-mounted into the coast container.
+    pub host_mounts: Vec<HostMountConfig>,
     /// Volume configurations.
     pub volumes: Vec<VolumeConfig>,
     /// Shared service configurations.
@@ -244,6 +247,7 @@ impl Coastfile {
                 env: vec![],
                 files: vec![],
             },
+            host_mounts: vec![],
             volumes: vec![],
             shared_services: vec![],
             setup: SetupConfig::default(),
@@ -426,6 +430,11 @@ impl Coastfile {
                 secret.name.as_str()
             });
         let inject = Self::merge_inject(base.inject, raw.inject);
+        let host_mounts = Self::merge_named_items(
+            base.host_mounts,
+            Self::parse_host_mounts(raw.host_mounts, project_root)?,
+            |mount| mount.name.as_str(),
+        );
         let volumes =
             Self::merge_named_items(base.volumes, Self::parse_volumes(raw.volumes)?, |volume| {
                 volume.name.as_str()
@@ -483,6 +492,7 @@ impl Coastfile {
 
         let primary_port = raw.coast.primary_port.or(base.primary_port);
         Self::validate_primary_port(&primary_port, &ports)?;
+        Self::validate_host_mounts(&host_mounts)?;
 
         Ok(Coastfile {
             name,
@@ -493,6 +503,7 @@ impl Coastfile {
             primary_port,
             secrets,
             inject,
+            host_mounts,
             volumes,
             shared_services,
             setup,
@@ -539,6 +550,9 @@ impl Coastfile {
         for name in &unset.services {
             coastfile.services.retain(|s| s.name != *name);
         }
+        for name in &unset.host_mounts {
+            coastfile.host_mounts.retain(|m| m.name != *name);
+        }
     }
 
     fn validate_and_build(raw: RawCoastfile, project_root: &Path) -> Result<Self> {
@@ -580,6 +594,9 @@ impl Coastfile {
                 files: vec![],
             },
         };
+
+        // Parse host mounts
+        let host_mounts = Self::parse_host_mounts(raw.host_mounts, project_root)?;
 
         // Parse volumes
         let volumes = Self::parse_volumes(raw.volumes)?;
@@ -637,6 +654,7 @@ impl Coastfile {
 
         let primary_port = raw.coast.primary_port;
         Self::validate_primary_port(&primary_port, &raw.ports)?;
+        Self::validate_host_mounts(&host_mounts)?;
 
         Ok(Coastfile {
             name,
@@ -647,6 +665,7 @@ impl Coastfile {
             primary_port,
             secrets,
             inject,
+            host_mounts,
             volumes,
             shared_services,
             setup,
@@ -680,6 +699,23 @@ impl Coastfile {
 pub const EXTERNAL_WORKTREE_MOUNT_PREFIX: &str = "/host-external-wt";
 
 impl Coastfile {
+    /// Resolve a host path to an absolute path.
+    ///
+    /// - `~/foo` expands `~` to the user's home directory
+    /// - `/absolute/path` is returned as-is
+    /// - `relative/path` is joined to `project_root`
+    pub fn resolve_host_path(project_root: &Path, path: &str) -> PathBuf {
+        if let Some(rest) = path.strip_prefix("~/") {
+            dirs::home_dir()
+                .unwrap_or_else(|| PathBuf::from("/"))
+                .join(rest)
+        } else if path.starts_with('/') {
+            PathBuf::from(path)
+        } else {
+            project_root.join(path)
+        }
+    }
+
     /// Returns `true` if a worktree dir path is external (absolute or home-relative).
     ///
     /// External dirs start with `~/` or `/`. Relative dirs (like `.worktrees`)
@@ -694,15 +730,7 @@ impl Coastfile {
     /// - `/absolute/path` is returned as-is
     /// - `relative/path` is joined to `project_root`
     pub fn resolve_worktree_dir(project_root: &Path, dir: &str) -> PathBuf {
-        if let Some(rest) = dir.strip_prefix("~/") {
-            dirs::home_dir()
-                .unwrap_or_else(|| PathBuf::from("/"))
-                .join(rest)
-        } else if dir.starts_with('/') {
-            PathBuf::from(dir)
-        } else {
-            project_root.join(dir)
-        }
+        Self::resolve_host_path(project_root, dir)
     }
 
     /// Returns `(index, resolved_path)` pairs for all external worktree dirs.

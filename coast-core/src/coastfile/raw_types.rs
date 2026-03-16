@@ -18,6 +18,8 @@ pub(super) struct RawCoastfile {
     #[serde(default)]
     pub inject: Option<RawInjectConfig>,
     #[serde(default)]
+    pub host_mounts: HashMap<String, RawHostMountConfig>,
+    #[serde(default)]
     pub volumes: HashMap<String, RawVolumeConfig>,
     #[serde(default)]
     pub shared_services: HashMap<String, RawSharedServiceConfig>,
@@ -64,6 +66,8 @@ pub(super) struct RawUnsetConfig {
     pub egress: Vec<String>,
     #[serde(default)]
     pub services: Vec<String>,
+    #[serde(default)]
+    pub host_mounts: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -146,6 +150,14 @@ pub(super) struct RawInjectConfig {
     pub env: Vec<String>,
     #[serde(default)]
     pub files: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(super) struct RawHostMountConfig {
+    pub source: String,
+    pub target: String,
+    #[serde(default = "default_true")]
+    pub read_only: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -267,4 +279,8 @@ where
     }
 
     deserializer.deserialize_any(StringOrVec)
+}
+
+const fn default_true() -> bool {
+    true
 }

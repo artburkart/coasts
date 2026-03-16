@@ -25,6 +25,7 @@ pub(super) struct ProvisionResult {
 
 struct CoastfileResources {
     pre_allocated_ports: Vec<(String, u16, u16)>,
+    bind_mounts: Vec<coast_docker::runtime::BindMount>,
     volume_mounts: Vec<coast_docker::runtime::VolumeMount>,
     mcp_servers: Vec<coast_core::types::McpServerConfig>,
     mcp_clients: Vec<coast_core::types::McpClientConnectorConfig>,
@@ -292,6 +293,7 @@ async fn load_coastfile_resources(
 ) -> Result<CoastfileResources> {
     let mut result = CoastfileResources {
         pre_allocated_ports: Vec::new(),
+        bind_mounts: Vec::new(),
         volume_mounts: Vec::new(),
         mcp_servers: Vec::new(),
         mcp_clients: Vec::new(),
@@ -324,6 +326,38 @@ async fn load_coastfile_resources(
                 container_path: format!("/coast-volumes/{}", vol_config.name),
                 read_only: false,
             });
+    }
+
+    for host_mount in &coastfile.host_mounts {
+        if !host_mount.source.exists() {
+            return Err(CoastError::coastfile(format!(
+                "host_mount '{}': source '{}' does not exist on the host",
+                host_mount.name,
+                host_mount.source.display()
+            )));
+        }
+        if !host_mount.source.is_dir() {
+            return Err(CoastError::coastfile(format!(
+                "host_mount '{}': source '{}' is not a directory",
+                host_mount.name,
+                host_mount.source.display()
+            )));
+        }
+        result.bind_mounts.push(coast_docker::runtime::BindMount {
+            host_path: host_mount.source.clone(),
+            container_path: host_mount.target.clone(),
+            read_only: host_mount.read_only,
+            propagation: None,
+        });
+    }
+
+    for (idx, resolved) in coastfile.external_worktree_dirs() {
+        result.bind_mounts.push(coast_docker::runtime::BindMount {
+            host_path: resolved,
+            container_path: coast_core::coastfile::Coastfile::external_mount_path(idx),
+            read_only: false,
+            propagation: None,
+        });
     }
 
     copy_snapshot_volumes(&coastfile.volumes, &req.name, &req.project, progress).await?;
@@ -443,12 +477,15 @@ async fn create_container(
     let mut env_vars = secret_plan.env_vars;
     merge_dynamic_port_env_vars(&mut env_vars, pre_allocated_ports);
 
+    let mut bind_mounts = secret_plan.bind_mounts;
+    bind_mounts.extend(resources.bind_mounts.clone());
+
     let mut config = coast_docker::dind::build_dind_config(
         &req.project,
         &req.name,
         code_path,
         env_vars,
-        secret_plan.bind_mounts,
+        bind_mounts,
         resources.volume_mounts.clone(),
         Vec::new(),
         image_cache_path,
@@ -457,24 +494,6 @@ async fn create_container(
         override_dir_opt,
         dind_extra_hosts,
     );
-
-    if let Ok(cf) = coast_core::coastfile::Coastfile::from_file(
-        &home
-            .join(".coast")
-            .join("images")
-            .join(&req.project)
-            .join("latest")
-            .join("coastfile.toml"),
-    ) {
-        for (idx, resolved) in cf.external_worktree_dirs() {
-            config.bind_mounts.push(coast_docker::runtime::BindMount {
-                host_path: resolved,
-                container_path: coast_core::coastfile::Coastfile::external_mount_path(idx),
-                read_only: false,
-                propagation: None,
-            });
-        }
-    }
 
     for (_name, canonical, dynamic) in pre_allocated_ports {
         config
@@ -840,6 +859,7 @@ mount = "/data"
         assert_eq!(resources.pre_allocated_ports[0].1, 3000);
         assert!(resources.pre_allocated_ports[0].2 > 0);
 
+        assert!(resources.bind_mounts.is_empty());
         assert_eq!(resources.volume_mounts.len(), 1);
         assert_eq!(
             resources.volume_mounts[0].volume_name,
@@ -871,6 +891,7 @@ mount = "/data"
                 .unwrap();
 
         assert!(resources.pre_allocated_ports.is_empty());
+        assert!(resources.bind_mounts.is_empty());
         assert!(resources.volume_mounts.is_empty());
         assert!(resources.mcp_servers.is_empty());
         assert!(resources.mcp_clients.is_empty());
@@ -906,11 +927,77 @@ snapshot_source = "seed-volume"
                 .unwrap();
 
         assert!(resources.pre_allocated_ports.is_empty());
+        assert!(resources.bind_mounts.is_empty());
         assert!(resources.volume_mounts.is_empty());
         assert!(resources.mcp_servers.is_empty());
         assert!(resources.mcp_clients.is_empty());
         assert!(resources.shared_services.is_empty());
         assert!(resources.shared_service_targets.is_empty());
         assert!(resources.shared_network.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_load_coastfile_resources_reads_host_mounts() {
+        let dir = tempfile::tempdir().unwrap();
+        let host_mount_dir = dir.path().join("omai-packs");
+        std::fs::create_dir_all(&host_mount_dir).unwrap();
+        let coastfile_path = dir.path().join("coastfile.toml");
+        std::fs::write(
+            &coastfile_path,
+            format!(
+                r#"
+[coast]
+name = "proj"
+
+[host_mounts.packs]
+source = "{}"
+target = "/host-mounts/omai-packs"
+"#,
+                host_mount_dir.display()
+            ),
+        )
+        .unwrap();
+
+        let state = AppState::new_for_testing(StateDb::open_in_memory().unwrap());
+        let progress = discard_progress();
+        let resources =
+            load_coastfile_resources(&coastfile_path, &sample_run_request(), &state, &progress)
+                .await
+                .unwrap();
+
+        assert_eq!(resources.bind_mounts.len(), 1);
+        assert_eq!(resources.bind_mounts[0].host_path, host_mount_dir);
+        assert_eq!(
+            resources.bind_mounts[0].container_path,
+            "/host-mounts/omai-packs"
+        );
+        assert!(resources.bind_mounts[0].read_only);
+    }
+
+    #[tokio::test]
+    async fn test_load_coastfile_resources_rejects_missing_host_mount_source() {
+        let dir = tempfile::tempdir().unwrap();
+        let coastfile_path = dir.path().join("coastfile.toml");
+        std::fs::write(
+            &coastfile_path,
+            r#"
+[coast]
+name = "proj"
+
+[host_mounts.packs]
+source = "./missing-dir"
+target = "/host-mounts/omai-packs"
+"#,
+        )
+        .unwrap();
+
+        let state = AppState::new_for_testing(StateDb::open_in_memory().unwrap());
+        let progress = discard_progress();
+        let err =
+            load_coastfile_resources(&coastfile_path, &sample_run_request(), &state, &progress)
+                .await
+                .unwrap_err();
+
+        assert!(err.to_string().contains("does not exist on the host"));
     }
 }

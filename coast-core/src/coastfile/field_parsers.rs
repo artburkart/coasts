@@ -4,15 +4,96 @@ use std::path::{Component, Path, PathBuf};
 
 use crate::error::{CoastError, Result};
 use crate::types::{
-    AssignAction, AssignConfig, BareServiceConfig, InjectType, McpClientConnectorConfig,
-    McpClientFormat, McpProxyMode, McpServerConfig, RestartPolicy, SecretConfig, SetupFileConfig,
-    SharedServiceConfig, SharedServicePort, VolumeConfig, VolumeStrategy,
+    AssignAction, AssignConfig, BareServiceConfig, HostMountConfig, InjectType,
+    McpClientConnectorConfig, McpClientFormat, McpProxyMode, McpServerConfig, RestartPolicy,
+    SecretConfig, SetupFileConfig, SharedServiceConfig, SharedServicePort, VolumeConfig,
+    VolumeStrategy,
 };
 
 use super::raw_types::*;
 use super::Coastfile;
 
 impl Coastfile {
+    pub(super) fn parse_host_mounts(
+        raw_mounts: HashMap<String, RawHostMountConfig>,
+        project_root: &Path,
+    ) -> Result<Vec<HostMountConfig>> {
+        raw_mounts
+            .into_iter()
+            .map(|(name, raw)| Self::parse_host_mount(name, raw, project_root))
+            .collect::<Result<Vec<_>>>()
+    }
+
+    fn parse_host_mount(
+        name: String,
+        raw: RawHostMountConfig,
+        project_root: &Path,
+    ) -> Result<HostMountConfig> {
+        let source_str = raw.source.trim();
+        if source_str.is_empty() {
+            return Err(CoastError::coastfile(format!(
+                "host_mount '{name}': source cannot be empty"
+            )));
+        }
+
+        let target = raw.target.trim().to_string();
+        if target.is_empty() {
+            return Err(CoastError::coastfile(format!(
+                "host_mount '{name}': target cannot be empty"
+            )));
+        }
+
+        let target_path = Path::new(&target);
+        if !target_path.is_absolute() {
+            return Err(CoastError::coastfile(format!(
+                "host_mount '{name}': target '{}' must be an absolute container path",
+                target
+            )));
+        }
+        if target.ends_with('/') {
+            return Err(CoastError::coastfile(format!(
+                "host_mount '{name}': target '{}' must not end with '/'",
+                target
+            )));
+        }
+        if target_path
+            .components()
+            .any(|component| matches!(component, Component::ParentDir))
+        {
+            return Err(CoastError::coastfile(format!(
+                "host_mount '{name}': target '{}' must not contain '..'",
+                target
+            )));
+        }
+
+        Ok(HostMountConfig {
+            name,
+            source: Self::resolve_host_path(project_root, source_str),
+            target,
+            read_only: raw.read_only,
+        })
+    }
+
+    pub(super) fn validate_host_mounts(host_mounts: &[HostMountConfig]) -> Result<()> {
+        let mut seen_targets = std::collections::HashSet::new();
+        for mount in host_mounts {
+            if !seen_targets.insert(mount.target.clone()) {
+                return Err(CoastError::coastfile(format!(
+                    "host_mount '{}' reuses target '{}', but each host mount target must be unique",
+                    mount.name, mount.target
+                )));
+            }
+            if let Some(reserved) = reserved_host_mount_prefix(&mount.target) {
+                return Err(CoastError::coastfile(format!(
+                    "host_mount '{}': target '{}' conflicts with reserved Coast path '{}'",
+                    mount.name, mount.target, reserved
+                )));
+            }
+        }
+
+        Ok(())
+    }
+
     pub(super) fn parse_secrets(
         raw_secrets: HashMap<String, RawSecretConfig>,
     ) -> Result<Vec<SecretConfig>> {
@@ -399,4 +480,25 @@ impl Coastfile {
             exclude_paths: raw.exclude_paths,
         })
     }
+}
+
+fn reserved_host_mount_prefix(target: &str) -> Option<&'static str> {
+    const RESERVED_PREFIXES: &[&str] = &[
+        "/workspace",
+        "/host-project",
+        "/coast-artifact",
+        "/coast-override",
+        "/image-cache",
+        "/var/lib/docker",
+        "/run/secrets",
+        "/coast-volumes",
+        super::EXTERNAL_WORKTREE_MOUNT_PREFIX,
+    ];
+
+    RESERVED_PREFIXES.iter().copied().find(|prefix| {
+        target == *prefix
+            || target
+                .strip_prefix(prefix)
+                .is_some_and(|suffix| suffix.starts_with('/'))
+    })
 }

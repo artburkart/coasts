@@ -4,6 +4,7 @@
 /// making it safe to store in a build artifact directory where parent
 /// files are not available.
 use std::fmt::Write;
+use std::path::Path;
 
 use crate::types::{InjectType, RestartPolicy, SharedServicePort, VolumeStrategy};
 
@@ -22,20 +23,33 @@ fn format_shared_service_port(port: &SharedServicePort) -> String {
     }
 }
 
+fn serialize_project_path(path: &Path, project_root: &Path) -> String {
+    if let Ok(rel) = path.strip_prefix(project_root) {
+        let rel = rel.display().to_string();
+        if rel.is_empty() {
+            ".".to_string()
+        } else if rel.starts_with('.') {
+            rel
+        } else {
+            format!("./{rel}")
+        }
+    } else if path.is_absolute() {
+        path.display().to_string()
+    } else {
+        let rel = path.display().to_string();
+        if rel.starts_with('.') {
+            rel
+        } else {
+            format!("./{rel}")
+        }
+    }
+}
+
 fn write_coast_section(coastfile: &Coastfile, out: &mut String) {
     writeln!(out, "[coast]").unwrap();
     writeln!(out, "name = {}", toml_quote(&coastfile.name)).unwrap();
     if let Some(ref compose) = coastfile.compose {
-        let rel = compose
-            .strip_prefix(&coastfile.project_root)
-            .unwrap_or(compose)
-            .display()
-            .to_string();
-        let rel = if !rel.starts_with('.') {
-            format!("./{rel}")
-        } else {
-            rel
-        };
+        let rel = serialize_project_path(compose, &coastfile.project_root);
         writeln!(out, "compose = {}", toml_quote(&rel)).unwrap();
     }
     writeln!(out, "runtime = {}", toml_quote(coastfile.runtime.as_str())).unwrap();
@@ -117,6 +131,18 @@ fn write_setup_section(coastfile: &Coastfile, out: &mut String) {
         writeln!(out, "content = {}", toml_quote(&file.content)).unwrap();
         if let Some(ref mode) = file.mode {
             writeln!(out, "mode = {}", toml_quote(mode)).unwrap();
+        }
+    }
+}
+
+fn write_host_mounts_section(coastfile: &Coastfile, out: &mut String) {
+    for mount in &coastfile.host_mounts {
+        writeln!(out, "\n[host_mounts.{}]", mount.name).unwrap();
+        let source = serialize_project_path(&mount.source, &coastfile.project_root);
+        writeln!(out, "source = {}", toml_quote(&source)).unwrap();
+        writeln!(out, "target = {}", toml_quote(&mount.target)).unwrap();
+        if !mount.read_only {
+            writeln!(out, "read_only = false").unwrap();
         }
     }
 }
@@ -417,6 +443,7 @@ impl Coastfile {
         let mut out = String::new();
         write_coast_section(self, &mut out);
         write_setup_section(self, &mut out);
+        write_host_mounts_section(self, &mut out);
         write_numeric_map_section("ports", &self.ports, &mut out);
         write_healthcheck_section(self, &mut out);
         write_shared_services_section(self, &mut out);

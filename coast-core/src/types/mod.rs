@@ -7,7 +7,7 @@
 /// - [`instance`]: CoastInstance, InstanceStatus, PortMapping
 /// - [`volume`]: VolumeStrategy, VolumeConfig, SharedServiceConfig, SecretConfig, InjectType
 /// - [`service`]: RestartPolicy, BareServiceConfig
-/// - [`runtime`]: RuntimeType, SetupConfig, SetupFileConfig, HostInjectConfig
+/// - [`runtime`]: RuntimeType, SetupConfig, SetupFileConfig, HostInjectConfig, HostMountConfig
 /// - [`assign`]: AssignAction, AssignConfig, OmitConfig
 /// - [`mcp`]: McpProxyMode, McpServerConfig, McpClientFormat, McpClientConnectorConfig
 pub mod assign;

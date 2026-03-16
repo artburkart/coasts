@@ -100,6 +100,7 @@ Every Coast container has these mounts:
 |---|---|---|---|
 | `/workspace` | bind mount (in-container) | RW | Project root or worktree. Switchable on assign. |
 | `/host-project` | Docker bind mount | RW | Raw project root. Fixed at container creation. |
+| `/host-mounts/...` | Docker bind mount | RO/RW | Optional extra host directories from `[host_mounts.*]`. |
 | `/image-cache` | Docker bind mount | RO | Pre-pulled OCI tarballs from `~/.coast/image-cache/`. |
 | `/coast-artifact` | Docker bind mount | RO | Build artifact with rewritten compose files. |
 | `/coast-override` | Docker bind mount | RO | Generated compose overrides for [shared services](SHARED_SERVICES.md). |
