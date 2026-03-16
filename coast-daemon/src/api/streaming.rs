@@ -513,8 +513,7 @@ pub(crate) fn resolve_agent_shell_command(
     build_id: Option<&str>,
     coastfile_type: Option<&str>,
 ) -> Option<String> {
-    let home = dirs::home_dir()?;
-    let project_dir = home.join(".coast").join("images").join(project);
+    let project_dir = coast_core::artifact::coast_home().ok()?.join("images").join(project);
 
     let manifest_path = build_id
         .map(|bid| project_dir.join(bid).join("manifest.json"))

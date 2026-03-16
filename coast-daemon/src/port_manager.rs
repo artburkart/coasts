@@ -1001,6 +1001,19 @@ mod tests {
             return;
         }
 
+        // Some restricted environments allow running `pkill` but deny
+        // enumerating the process table it depends on. In that case this
+        // integration-style check is not meaningful, so skip it.
+        if let Ok(output) = Command::new("pkill")
+            .args(["-f", "coast-definitely-no-match-12345"])
+            .output()
+        {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            if stderr.contains("Cannot get process list") {
+                return;
+            }
+        }
+
         let port = allocate_dynamic_port().unwrap();
         let cmd = build_socat_command(port, "127.0.0.1", port);
 
@@ -1026,7 +1039,21 @@ mod tests {
         // Reap the child to clear the zombie. Since we spawned it, we must
         // call wait(). In production, orphaned socat processes are parented
         // by init/launchd which handles reaping automatically.
-        let status = child.wait().expect("should be able to wait for child");
+        //
+        // `pkill` can take a moment to match and deliver the signal, so poll
+        // for a bounded period rather than block forever on `wait()`.
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let status = loop {
+            if let Some(status) = child.try_wait().expect("should be able to poll child") {
+                break status;
+            }
+            if Instant::now() >= deadline {
+                let _ = child.kill();
+                let _ = child.wait();
+                panic!("cleanup_orphaned_socat did not terminate the matching socat process");
+            }
+            std::thread::sleep(Duration::from_millis(25));
+        };
         assert!(
             !status.success(),
             "socat should have exited due to signal, not exited cleanly"

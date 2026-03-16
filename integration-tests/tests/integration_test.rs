@@ -93,7 +93,7 @@ fn test_parse_minimal_coastfile() {
     assert_eq!(coastfile.name, "test-project");
     assert_eq!(
         coastfile.compose,
-        Some(PathBuf::from("/tmp/project/docker-compose.yml"))
+        Some(vec![PathBuf::from("/tmp/project/docker-compose.yml")])
     );
     assert_eq!(coastfile.runtime, RuntimeType::Dind);
     assert_eq!(coastfile.ports.len(), 2);

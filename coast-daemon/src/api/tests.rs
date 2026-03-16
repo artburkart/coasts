@@ -17,18 +17,31 @@ mod tests {
     use crate::server::AppState;
     use crate::state::StateDb;
 
+    fn test_coast_home() -> std::path::PathBuf {
+        std::env::temp_dir().join("coast-api-tests").join(".coast")
+    }
+
     fn test_app() -> axum::Router {
+        unsafe {
+            std::env::set_var("COAST_HOME", test_coast_home());
+        }
         let db = StateDb::open_in_memory().unwrap();
         let state = Arc::new(AppState::new_for_testing(db));
         api::api_router(state)
     }
 
     fn test_state() -> Arc<AppState> {
+        unsafe {
+            std::env::set_var("COAST_HOME", test_coast_home());
+        }
         let db = StateDb::open_in_memory().unwrap();
         Arc::new(AppState::new_for_testing(db))
     }
 
     fn test_state_with_docker() -> Arc<AppState> {
+        unsafe {
+            std::env::set_var("COAST_HOME", test_coast_home());
+        }
         let db = StateDb::open_in_memory().unwrap();
         Arc::new(AppState::new_for_testing_with_docker(db))
     }
@@ -50,9 +63,11 @@ mod tests {
     }
 
     fn write_manifest_with_agent_command(project: &str, build_id: &str, command: &str) {
-        let home = dirs::home_dir().unwrap();
-        let dir = home
-            .join(".coast")
+        unsafe {
+            std::env::set_var("COAST_HOME", test_coast_home());
+        }
+        let dir = coast_core::artifact::coast_home()
+            .unwrap()
             .join("images")
             .join(project)
             .join(build_id);
@@ -70,10 +85,14 @@ mod tests {
     }
 
     fn remove_project_images_dir(project: &str) {
-        if let Some(home) = dirs::home_dir() {
-            let path = home.join(".coast").join("images").join(project);
-            let _ = fs::remove_dir_all(path);
+        unsafe {
+            std::env::set_var("COAST_HOME", test_coast_home());
         }
+        let path = coast_core::artifact::coast_home()
+            .unwrap()
+            .join("images")
+            .join(project);
+        let _ = fs::remove_dir_all(path);
     }
 
     #[tokio::test]
