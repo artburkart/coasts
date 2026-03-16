@@ -81,7 +81,7 @@ pub async fn handle(
         });
         match coast_core::coastfile::Coastfile::from_file(&coastfile_path) {
             Ok(cf) => (
-                cf.compose.is_some(),
+                cf.has_compose(),
                 !cf.services.is_empty(),
                 !autostart_false,
             ),

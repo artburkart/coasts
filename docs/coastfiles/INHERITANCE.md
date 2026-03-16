@@ -153,6 +153,8 @@ This is useful when your `docker-compose.yml` defines services you don't need in
 
 When a child extends a parent, `[omit]` lists are concatenated — the child adds to the parent's omit list.
 
+If you do use layered compose files via `compose = ["./docker-compose.yml", "./docker-compose.dev.yml"]`, the child Coastfile's `compose` value replaces the parent's full compose list. Compose lists do not append across `extends` in v1.
+
 ## Examples
 
 ### Lightweight test variant

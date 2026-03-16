@@ -316,7 +316,7 @@ pub fn prepare_artifact(coastfile: &Coastfile, coastfile_content: &str) -> Resul
     let art_dir = ensure_artifact_dirs(&coastfile.name)?;
 
     copy_coastfile(coastfile_content, &art_dir)?;
-    if let Some(ref compose) = coastfile.compose {
+    if let Some(compose) = coastfile.compose_files().first() {
         let compose_filename = copy_compose_file(compose, &art_dir)?;
         info!(compose = %compose_filename, "compose file copied to artifact");
     }

@@ -72,7 +72,7 @@ fn test_parse_valid_coastfile() {
     assert_eq!(coastfile.name, "my-app");
     assert_eq!(
         coastfile.compose,
-        Some(PathBuf::from("/home/user/dev/my-app/docker-compose.yml"))
+        Some(vec![PathBuf::from("/home/user/dev/my-app/docker-compose.yml")])
     );
     assert_eq!(coastfile.runtime, RuntimeType::Dind);
 }
@@ -520,7 +520,7 @@ compose = "docker-compose.yml"
     assert_eq!(coastfile.name, "minimal");
     assert_eq!(
         coastfile.compose,
-        Some(PathBuf::from("/tmp/docker-compose.yml"))
+        Some(vec![PathBuf::from("/tmp/docker-compose.yml")])
     );
 }
 
@@ -534,7 +534,7 @@ compose = "/absolute/path/docker-compose.yml"
     let coastfile = Coastfile::parse(toml, Path::new("/tmp")).unwrap();
     assert_eq!(
         coastfile.compose,
-        Some(PathBuf::from("/absolute/path/docker-compose.yml"))
+        Some(vec![PathBuf::from("/absolute/path/docker-compose.yml")])
     );
 }
 
@@ -549,8 +549,79 @@ compose = "./docker-compose.yml"
     let coastfile = Coastfile::parse(toml, root).unwrap();
     assert_eq!(
         coastfile.compose,
-        Some(PathBuf::from("/home/user/project/docker-compose.yml"))
+        Some(vec![PathBuf::from("/home/user/project/docker-compose.yml")])
     );
+}
+
+#[test]
+fn test_compose_array_relative_paths_resolved_in_order() {
+    let toml = r#"
+[coast]
+name = "my-app"
+compose = ["./docker-compose.yml", "./docker-compose.dev.yml"]
+"#;
+    let coastfile = Coastfile::parse(toml, Path::new("/tmp/project")).unwrap();
+    assert_eq!(
+        coastfile.compose,
+        Some(vec![
+            PathBuf::from("/tmp/project/docker-compose.yml"),
+            PathBuf::from("/tmp/project/docker-compose.dev.yml"),
+        ])
+    );
+}
+
+#[test]
+fn test_compose_array_cannot_be_empty() {
+    let toml = r#"
+[coast]
+name = "my-app"
+compose = []
+"#;
+    let result = Coastfile::parse(toml, Path::new("/tmp/project"));
+    assert!(result.is_err());
+    assert!(result.unwrap_err().to_string().contains("empty array"));
+}
+
+#[test]
+fn test_compose_entries_cannot_be_blank() {
+    let toml = r#"
+[coast]
+name = "my-app"
+compose = ["./docker-compose.yml", "  "]
+"#;
+    let result = Coastfile::parse(toml, Path::new("/tmp/project"));
+    assert!(result.is_err());
+    assert!(result.unwrap_err().to_string().contains("cannot be empty"));
+}
+
+#[test]
+fn test_compose_entries_must_share_parent_directory() {
+    let toml = r#"
+[coast]
+name = "my-app"
+compose = ["./infra/docker-compose.yml", "./apps/web/docker-compose.dev.yml"]
+"#;
+    let result = Coastfile::parse(toml, Path::new("/tmp/project"));
+    assert!(result.is_err());
+    assert!(result
+        .unwrap_err()
+        .to_string()
+        .contains("share one parent directory"));
+}
+
+#[test]
+fn test_compose_entries_must_be_unique() {
+    let toml = r#"
+[coast]
+name = "my-app"
+compose = ["./docker-compose.yml", "./docker-compose.yml"]
+"#;
+    let result = Coastfile::parse(toml, Path::new("/tmp/project"));
+    assert!(result.is_err());
+    assert!(result
+        .unwrap_err()
+        .to_string()
+        .contains("listed more than once"));
 }
 
 #[test]
@@ -575,7 +646,7 @@ compose = "./docker-compose.yml"
 
     let coastfile = Coastfile::from_file(&coastfile_path).unwrap();
     assert_eq!(coastfile.name, "test-app");
-    assert!(coastfile.compose.is_some());
+    assert!(coastfile.has_compose());
     assert_eq!(coastfile.project_root, dir.path());
 }
 

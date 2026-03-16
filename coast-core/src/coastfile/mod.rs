@@ -30,8 +30,8 @@ use raw_types::*;
 pub struct Coastfile {
     /// Project name.
     pub name: String,
-    /// Path to the docker-compose file (resolved to absolute), if present.
-    pub compose: Option<PathBuf>,
+    /// Ordered list of docker-compose files (resolved to absolute), if present.
+    pub compose: Option<Vec<PathBuf>>,
     /// Container runtime.
     pub runtime: RuntimeType,
     /// Port mappings (logical_name -> port).
@@ -89,6 +89,21 @@ pub struct AgentShellConfig {
 }
 
 impl Coastfile {
+    /// Return the configured compose files as a slice.
+    pub fn compose_files(&self) -> &[PathBuf] {
+        self.compose.as_deref().unwrap_or(&[])
+    }
+
+    /// Return whether any compose files are configured.
+    pub fn has_compose(&self) -> bool {
+        self.compose.as_ref().is_some_and(|files| !files.is_empty())
+    }
+
+    /// Return the shared compose directory, if compose files are configured.
+    pub fn compose_dir(&self) -> Option<&Path> {
+        self.compose_files().first().and_then(|path| path.parent())
+    }
+
     /// Parse a Coastfile from a TOML string (standalone, no inheritance).
     ///
     /// The `project_root` is the directory containing the Coastfile,
@@ -275,6 +290,60 @@ impl Coastfile {
         }
     }
 
+    fn parse_compose_paths(raw_paths: &[String], project_root: &Path) -> Result<Vec<PathBuf>> {
+        if raw_paths.is_empty() {
+            return Err(CoastError::coastfile(
+                "coast.compose cannot be an empty array",
+            ));
+        }
+
+        let mut resolved = Vec::with_capacity(raw_paths.len());
+        let mut seen = HashSet::new();
+        let mut expected_parent: Option<PathBuf> = None;
+
+        for raw_path in raw_paths {
+            let trimmed = raw_path.trim();
+            if trimmed.is_empty() {
+                return Err(CoastError::coastfile(
+                    "coast.compose entries cannot be empty",
+                ));
+            }
+
+            let resolved_path = Self::resolve_path(trimmed, project_root);
+            let parent = resolved_path.parent().ok_or_else(|| {
+                CoastError::coastfile(format!(
+                    "compose path '{}' has no parent directory",
+                    resolved_path.display()
+                ))
+            })?;
+
+            match &expected_parent {
+                Some(expected) if expected != parent => {
+                    return Err(CoastError::coastfile(format!(
+                        "all compose files must share one parent directory in v1. \
+                         '{}' is in '{}', expected '{}'",
+                        resolved_path.display(),
+                        parent.display(),
+                        expected.display()
+                    )));
+                }
+                None => expected_parent = Some(parent.to_path_buf()),
+                _ => {}
+            }
+
+            if !seen.insert(resolved_path.clone()) {
+                return Err(CoastError::coastfile(format!(
+                    "compose file '{}' is listed more than once",
+                    resolved_path.display()
+                )));
+            }
+
+            resolved.push(resolved_path);
+        }
+
+        Ok(resolved)
+    }
+
     fn parse_runtime(runtime: Option<&str>) -> Result<Option<RuntimeType>> {
         runtime
             .map(|runtime| {
@@ -420,7 +489,8 @@ impl Coastfile {
         let compose = raw
             .coast
             .compose
-            .map(|compose| Self::resolve_path(&compose, project_root))
+            .map(|compose| Self::parse_compose_paths(&compose, project_root))
+            .transpose()?
             .or(base.compose);
         let runtime = Self::parse_runtime(raw.coast.runtime.as_deref())?.unwrap_or(base.runtime);
         let ports = Self::merge_validated_ports(base.ports, raw.ports, "port")?;
@@ -568,7 +638,8 @@ impl Coastfile {
         let compose = raw
             .coast
             .compose
-            .map(|compose| Self::resolve_path(&compose, project_root));
+            .map(|compose| Self::parse_compose_paths(&compose, project_root))
+            .transpose()?;
 
         // Validate runtime
         let runtime =

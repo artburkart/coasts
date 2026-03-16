@@ -15,7 +15,7 @@ name = "my-app"
 
 ### `compose`
 
-Path to a Docker Compose file. Relative paths are resolved against the project root (the directory containing the Coastfile, or `root` if set).
+Path to a Docker Compose file, or an ordered list of compose files to layer. Relative paths are resolved against the project root (the directory containing the Coastfile, or `root` if set).
 
 ```toml
 [coast]
@@ -28,6 +28,20 @@ compose = "./docker-compose.yml"
 name = "my-app"
 compose = "./infra/docker-compose.yml"
 ```
+
+```toml
+[coast]
+name = "my-app"
+compose = ["./docker-compose.yml", "./docker-compose.dev.yml"]
+```
+
+When `compose` is an array, files are applied in order and later files override earlier ones.
+
+Rules for layered compose files:
+
+- all compose files must live under the same parent directory in v1
+- child Coastfiles replace the parent `compose` setting entirely when using `extends`
+- use `[omit]` when you only need to remove services or volumes from one shared compose stack
 
 If omitted, the Coast container starts without running `docker compose up`. You can either use [bare services](SERVICES.md) or interact with the container directly via `coast exec`.
 

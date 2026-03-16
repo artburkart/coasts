@@ -48,7 +48,7 @@ pub async fn handle(
         CoastError::io_simple("cannot determine home directory. Set $HOME and try again.")
     })?;
 
-    let compose_analysis = plan::ComposeAnalysis::from_coastfile(&coastfile);
+    let compose_analysis = plan::ComposeAnalysis::from_coastfile(&coastfile)?;
     let build_plan = plan::BuildPlan::from_inputs(
         !coastfile.secrets.is_empty(),
         compose_analysis.has_build_directives(),

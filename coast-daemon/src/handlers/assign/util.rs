@@ -32,11 +32,12 @@ pub(super) fn load_coastfile_data(project: &str) -> CoastfileData {
         .join("coastfile.toml");
     if coastfile_path.exists() {
         if let Ok(cf) = coast_core::coastfile::Coastfile::from_file(&coastfile_path) {
+            let has_compose = cf.has_compose();
             return CoastfileData {
                 assign: cf.assign,
                 worktree_dirs: cf.worktree_dirs,
                 default_worktree_dir: cf.default_worktree_dir,
-                has_compose: cf.compose.is_some(),
+                has_compose,
             };
         }
     }
@@ -58,7 +59,7 @@ pub fn has_compose(project: &str) -> bool {
         .join("coastfile.toml");
     if coastfile_path.exists() {
         if let Ok(cf) = coast_core::coastfile::Coastfile::from_file(&coastfile_path) {
-            return cf.compose.is_some();
+            return cf.has_compose();
         }
     }
     true

@@ -924,9 +924,41 @@ root = "../workspace"
     let cf = Coastfile::from_file(&child_path).unwrap();
     assert_eq!(
         cf.compose,
-        Some(child_dir.join("./docker-compose.child.yml"))
+        Some(vec![child_dir.join("./docker-compose.child.yml")])
     );
     assert_eq!(cf.project_root, child_dir.join("../workspace"));
+}
+
+#[test]
+fn test_extends_child_compose_replaces_parent_compose_list() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("Coastfile"),
+        r#"
+[coast]
+name = "my-app"
+compose = ["./docker-compose.yml", "./docker-compose.base.yml"]
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        dir.path().join("Coastfile.dev"),
+        r#"
+[coast]
+extends = "Coastfile"
+compose = ["./docker-compose.yml", "./docker-compose.dev.yml"]
+"#,
+    )
+    .unwrap();
+
+    let cf = Coastfile::from_file(&dir.path().join("Coastfile.dev")).unwrap();
+    assert_eq!(
+        cf.compose,
+        Some(vec![
+            dir.path().join("./docker-compose.yml"),
+            dir.path().join("./docker-compose.dev.yml"),
+        ])
+    );
 }
 
 #[test]
@@ -1287,7 +1319,7 @@ web = 3000
     let reparsed = Coastfile::parse(&standalone, dir.path()).unwrap();
     assert_eq!(
         reparsed.compose,
-        Some(dir.path().join("./infra/docker-compose.yml"))
+        Some(vec![dir.path().join("./infra/docker-compose.yml")])
     );
     assert_eq!(reparsed.worktree_dirs, vec![".custom-worktrees"]);
     assert!(!reparsed.autostart);
@@ -1689,7 +1721,7 @@ vite = 3040
     std::fs::write(dir.path().join("docker-compose.yml"), "version: '3'").unwrap();
     let cf = Coastfile::parse(toml, dir.path()).unwrap();
     assert_eq!(cf.name, "mixed");
-    assert!(cf.compose.is_some());
+    assert!(cf.has_compose());
     assert_eq!(cf.services.len(), 2);
 
     let vite = cf.services.iter().find(|s| s.name == "vite").unwrap();
@@ -1732,7 +1764,7 @@ vite = 3040
     std::fs::write(&child_path, child_toml).unwrap();
     let cf = Coastfile::from_file(&child_path).unwrap();
     assert_eq!(cf.name, "base-mixed");
-    assert!(cf.compose.is_some());
+    assert!(cf.has_compose());
     assert_eq!(cf.services.len(), 1);
     assert_eq!(cf.services[0].name, "vite");
     assert_eq!(cf.ports.len(), 2);
@@ -1988,6 +2020,34 @@ read_only = false
         .unwrap();
     assert_eq!(cache.source, std::path::Path::new("/opt/shared-cache"));
     assert!(!cache.read_only);
+}
+
+#[test]
+fn test_standalone_toml_roundtrip_with_multiple_compose_files() {
+    let dir = tempfile::tempdir().unwrap();
+    let coastfile = Coastfile::parse(
+        r#"
+[coast]
+name = "multi-compose"
+compose = ["./docker-compose.yml", "./docker-compose.dev.yml"]
+"#,
+        dir.path(),
+    )
+    .unwrap();
+
+    let standalone = coastfile.to_standalone_toml();
+    assert!(standalone.contains("compose = ["));
+    assert!(standalone.contains("\"./docker-compose.yml\""));
+    assert!(standalone.contains("\"./docker-compose.dev.yml\""));
+
+    let reparsed = Coastfile::parse(&standalone, dir.path()).unwrap();
+    assert_eq!(
+        reparsed.compose,
+        Some(vec![
+            dir.path().join("./docker-compose.yml"),
+            dir.path().join("./docker-compose.dev.yml"),
+        ])
+    );
 }
 
 #[test]

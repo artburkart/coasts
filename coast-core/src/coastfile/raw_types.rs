@@ -98,8 +98,8 @@ pub(super) struct RawCoastSection {
     pub extends: Option<String>,
     #[serde(default)]
     pub includes: Option<Vec<String>>,
-    #[serde(default)]
-    pub compose: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_optional_string_or_vec")]
+    pub compose: Option<Vec<String>>,
     #[serde(default)]
     pub runtime: Option<String>,
     #[serde(default)]

@@ -112,20 +112,12 @@ fn detect_coastfile_info(
         Ok(cf) => {
             let svc_list = cf.services.clone();
             let has_svc = !svc_list.is_empty();
-            let rel_dir = cf.compose.as_ref().and_then(|p| {
-                let parent = p.parent()?;
-                let artifact_parent = coastfile_path.parent()?;
-                if parent == artifact_parent {
-                    return None;
-                }
-                parent
-                    .strip_prefix(artifact_parent)
-                    .ok()
-                    .and_then(|rel| rel.to_str())
-                    .filter(|s| !s.is_empty())
-                    .map(std::string::ToString::to_string)
-            });
-            (cf.compose.is_some(), rel_dir, has_svc, svc_list)
+            let rel_dir = raw_text
+                .parse::<toml::Value>()
+                .ok()
+                .and_then(|raw| super::parse_raw_compose_entries(&raw))
+                .and_then(|entries| super::compose_relative_dir(&entries));
+            (cf.has_compose(), rel_dir, has_svc, svc_list)
         }
         Err(_) => (true, None, false, vec![]),
     }

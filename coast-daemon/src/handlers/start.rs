@@ -203,7 +203,7 @@ pub async fn handle(
                 .flatten();
             let project_has_compose = parsed_coastfile
                 .as_ref()
-                .map(|coastfile| coastfile.compose.is_some())
+                .map(|coastfile| coastfile.has_compose())
                 .unwrap_or(true);
 
             // Re-apply the /workspace bind mount (project root or worktree).

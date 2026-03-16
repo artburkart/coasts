@@ -472,7 +472,7 @@ compose = "./docker-compose.yml"
     let cf = Coastfile::parse(toml, root).unwrap();
     assert_eq!(
         cf.compose,
-        Some(PathBuf::from("/home/user/dev/project/docker-compose.yml"))
+        Some(vec![PathBuf::from("/home/user/dev/project/docker-compose.yml")])
     );
 }
 
@@ -486,7 +486,7 @@ compose = "/absolute/path/docker-compose.yml"
     let cf = Coastfile::parse(toml, Path::new("/tmp")).unwrap();
     assert_eq!(
         cf.compose,
-        Some(PathBuf::from("/absolute/path/docker-compose.yml"))
+        Some(vec![PathBuf::from("/absolute/path/docker-compose.yml")])
     );
 }
 

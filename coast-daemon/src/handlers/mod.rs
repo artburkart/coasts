@@ -17,6 +17,7 @@ use crate::server::AppState;
 pub struct ComposeContext {
     pub project_name: String,
     pub compose_rel_dir: Option<String>,
+    pub compose_files: Vec<String>,
 }
 
 impl ComposeContext {
@@ -33,6 +34,11 @@ impl ComposeContext {
             Some(dir) => format!("/workspace/{}", dir),
             None => "/workspace".to_string(),
         };
+        let fallback_compose_flags = self
+            .compose_files
+            .iter()
+            .map(|path| format!(" -f {project_dir}/{}", path.trim_start_matches("./")))
+            .collect::<String>();
 
         let script = format!(
             concat!(
@@ -40,6 +46,8 @@ impl ComposeContext {
                 "  docker compose -p {proj} -f /coast-override/docker-compose.coast.yml --project-directory {dir} {subcmd}; ",
                 "elif [ -f /coast-artifact/compose.yml ]; then ",
                 "  docker compose -p {proj} -f /coast-artifact/compose.yml --project-directory {dir} {subcmd}; ",
+                "elif [ -n \"{fallback_flags}\" ]; then ",
+                "  docker compose -p {proj}{fallback_flags} --project-directory {dir} {subcmd}; ",
                 "elif [ -f {dir}/docker-compose.yml ]; then ",
                 "  docker compose -p {proj} -f {dir}/docker-compose.yml --project-directory {dir} {subcmd}; ",
                 "elif [ -f {dir}/docker-compose.yaml ]; then ",
@@ -52,6 +60,7 @@ impl ComposeContext {
             ),
             proj = self.project_name,
             dir = project_dir,
+            fallback_flags = fallback_compose_flags,
             subcmd = subcmd,
         );
 
@@ -84,26 +93,18 @@ pub fn compose_context_for_build(project: &str, build_id: Option<&str>) -> Compo
         None => project_dir.join("latest").join("coastfile.toml"),
     };
 
-    // Read the raw compose path from the TOML text instead of the parsed
-    // Coastfile. Coastfile::from_file resolves relative paths against the
-    // coastfile's parent directory, which inside the artifact dir turns
-    // "./docker-compose.yml" into "<artifact_hash>/docker-compose.yml".
-    // Extracting the parent dir name from that resolved path produces the
-    // artifact hash as the compose project name, breaking `docker compose ps`.
-    let compose_rel_dir = if coastfile_path.exists() {
+    let compose_files = if coastfile_path.exists() {
         std::fs::read_to_string(&coastfile_path)
             .ok()
             .and_then(|text| {
                 let raw: toml::Value = text.parse().ok()?;
-                let compose_str = raw.get("coast")?.get("compose")?.as_str()?;
-                let compose_path = std::path::Path::new(compose_str);
-                let parent = compose_path.parent()?;
-                let dir_name = parent.file_name()?.to_str()?;
-                Some(dir_name.to_string())
+                parse_raw_compose_entries(&raw)
             })
+            .unwrap_or_default()
     } else {
-        None
+        Vec::new()
     };
+    let compose_rel_dir = compose_relative_dir(&compose_files);
 
     let project_name = compose_rel_dir
         .clone()
@@ -112,6 +113,29 @@ pub fn compose_context_for_build(project: &str, build_id: Option<&str>) -> Compo
     ComposeContext {
         project_name,
         compose_rel_dir,
+        compose_files,
+    }
+}
+
+pub fn compose_relative_dir(compose_files: &[String]) -> Option<String> {
+    let compose_path = compose_files.first()?;
+    let parent = std::path::Path::new(compose_path).parent()?;
+    let dir_name = parent.file_name()?.to_str()?;
+    Some(dir_name.to_string())
+}
+
+pub fn parse_raw_compose_entries(raw: &toml::Value) -> Option<Vec<String>> {
+    let compose = raw.get("coast")?.get("compose")?;
+    match compose {
+        toml::Value::String(value) => Some(vec![value.to_string()]),
+        toml::Value::Array(values) => {
+            let entries = values
+                .iter()
+                .map(|value| value.as_str().map(std::string::ToString::to_string))
+                .collect::<Option<Vec<_>>>()?;
+            Some(entries)
+        }
+        _ => None,
     }
 }
 
@@ -193,6 +217,7 @@ mod compose_context_tests {
         let ctx = ComposeContext {
             project_name: "infra".into(),
             compose_rel_dir: Some("infra".into()),
+            compose_files: vec!["./docker-compose.yml".into()],
         };
         let cmd = ctx.compose_shell("ps --format json");
         assert_eq!(cmd[0], "sh");
@@ -208,11 +233,28 @@ mod compose_context_tests {
         let ctx = ComposeContext {
             project_name: "coast-myapp".into(),
             compose_rel_dir: None,
+            compose_files: vec!["./docker-compose.yml".into()],
         };
         let cmd = ctx.compose_shell("logs --tail 200");
         assert!(cmd[2].contains("-p coast-myapp"));
         assert!(cmd[2].contains("/workspace/docker-compose.yml"));
         assert!(cmd[2].contains("logs --tail 200"));
+    }
+
+    #[test]
+    fn test_compose_shell_layers_multiple_workspace_files() {
+        let ctx = ComposeContext {
+            project_name: "infra".into(),
+            compose_rel_dir: Some("infra".into()),
+            compose_files: vec![
+                "./docker-compose.yml".into(),
+                "./docker-compose.dev.yml".into(),
+            ],
+        };
+        let cmd = ctx.compose_shell("config --services");
+        assert!(cmd[2].contains(
+            "-f /workspace/infra/docker-compose.yml -f /workspace/infra/docker-compose.dev.yml"
+        ));
     }
 
     #[test]
@@ -276,6 +318,24 @@ compose = "./infra/docker-compose.yml"
         let parent = compose_path.parent().unwrap();
         let dir_name = parent.file_name().and_then(|f| f.to_str());
         assert_eq!(dir_name, Some("infra"));
+    }
+
+    #[test]
+    fn test_parse_raw_compose_entries_supports_array() {
+        let raw: toml::Value = r#"
+[coast]
+compose = ["./docker-compose.yml", "./docker-compose.dev.yml"]
+"#
+        .parse()
+        .unwrap();
+
+        assert_eq!(
+            parse_raw_compose_entries(&raw),
+            Some(vec![
+                "./docker-compose.yml".to_string(),
+                "./docker-compose.dev.yml".to_string(),
+            ])
+        );
     }
 
     #[test]

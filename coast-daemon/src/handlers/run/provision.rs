@@ -23,6 +23,7 @@ pub(super) struct ProvisionResult {
     pub pre_allocated_ports: Vec<(String, u16, u16)>,
 }
 
+#[derive(Debug)]
 struct CoastfileResources {
     pre_allocated_ports: Vec<(String, u16, u16)>,
     bind_mounts: Vec<coast_docker::runtime::BindMount>,

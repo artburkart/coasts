@@ -49,8 +49,15 @@ fn write_coast_section(coastfile: &Coastfile, out: &mut String) {
     writeln!(out, "[coast]").unwrap();
     writeln!(out, "name = {}", toml_quote(&coastfile.name)).unwrap();
     if let Some(ref compose) = coastfile.compose {
-        let rel = serialize_project_path(compose, &coastfile.project_root);
-        writeln!(out, "compose = {}", toml_quote(&rel)).unwrap();
+        let rel_paths = compose
+            .iter()
+            .map(|path| toml_quote(&serialize_project_path(path, &coastfile.project_root)))
+            .collect::<Vec<_>>();
+        if rel_paths.len() == 1 {
+            writeln!(out, "compose = {}", rel_paths[0]).unwrap();
+        } else {
+            writeln!(out, "compose = [{}]", rel_paths.join(", ")).unwrap();
+        }
     }
     writeln!(out, "runtime = {}", toml_quote(coastfile.runtime.as_str())).unwrap();
     if coastfile.worktree_dirs.len() == 1 {
