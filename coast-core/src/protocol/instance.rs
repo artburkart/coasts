@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
@@ -28,6 +30,9 @@ pub struct RunRequest {
     /// Force-remove any dangling Docker container with the same name before creating.
     #[serde(default)]
     pub force_remove_dangling: bool,
+    /// Caller environment snapshot for build-time interpolation and secrets.
+    #[serde(default)]
+    pub build_env: HashMap<String, String>,
 }
 
 /// Response after a successful run.
@@ -61,6 +66,9 @@ pub struct AssignRequest {
     /// When true, refresh the cached ignored-file bootstrap before assigning.
     #[serde(default)]
     pub force_sync: bool,
+    /// Caller environment snapshot for build-time interpolation and secrets.
+    #[serde(default)]
+    pub build_env: HashMap<String, String>,
 }
 
 /// Response after a successful worktree assignment.
@@ -149,6 +157,9 @@ pub struct RebuildRequest {
     pub name: String,
     /// Project name.
     pub project: String,
+    /// Caller environment snapshot for build-time interpolation and secrets.
+    #[serde(default)]
+    pub build_env: HashMap<String, String>,
 }
 
 /// Response after a successful rebuild.
@@ -298,6 +309,7 @@ mod tests {
             build_id: None,
             coastfile_type: None,
             force_remove_dangling: true,
+            build_env: Default::default(),
         };
         let json = serde_json::to_string(&req).unwrap();
         let deserialized: RunRequest = serde_json::from_str(&json).unwrap();

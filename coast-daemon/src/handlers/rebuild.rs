@@ -109,8 +109,11 @@ pub async fn handle(req: RebuildRequest, state: &AppState) -> Result<RebuildResp
             vec!["docker", "compose", "build"]
         };
 
+        let build_script = crate::handlers::shell_command_with_env(&build_cmd, &req.build_env);
         info!(cmd = ?build_cmd, "running compose build inside DinD");
-        let build_result = compose_rt.exec_in_coast(&container_id, &build_cmd).await;
+        let build_result = compose_rt
+            .exec_in_coast(&container_id, &["sh", "-lc", &build_script])
+            .await;
 
         match build_result {
             Ok(r) if r.success() => {
@@ -173,8 +176,11 @@ pub async fn handle(req: RebuildRequest, state: &AppState) -> Result<RebuildResp
             vec!["docker", "compose", "up", "-d"]
         };
 
+        let up_script = crate::handlers::shell_command_with_env(&up_cmd, &req.build_env);
         info!(cmd = ?up_cmd, "restarting compose services after rebuild");
-        let up_result = compose_rt.exec_in_coast(&container_id, &up_cmd).await;
+        let up_result = compose_rt
+            .exec_in_coast(&container_id, &["sh", "-lc", &up_script])
+            .await;
 
         match up_result {
             Ok(r) if r.success() => {
@@ -239,6 +245,7 @@ mod tests {
         let req = RebuildRequest {
             name: "nonexistent".to_string(),
             project: "proj".to_string(),
+            build_env: Default::default(),
         };
 
         let result = handle(req, &state).await;
@@ -257,6 +264,7 @@ mod tests {
         let req = RebuildRequest {
             name: "dev-1".to_string(),
             project: "proj".to_string(),
+            build_env: Default::default(),
         };
 
         let result = handle(req, &state).await;
@@ -275,6 +283,7 @@ mod tests {
         let req = RebuildRequest {
             name: "dev-1".to_string(),
             project: "proj".to_string(),
+            build_env: Default::default(),
         };
 
         let result = handle(req, &state).await;
@@ -294,6 +303,7 @@ mod tests {
         let req = RebuildRequest {
             name: "dev-1".to_string(),
             project: "proj".to_string(),
+            build_env: Default::default(),
         };
 
         let result = handle(req, &state).await;
@@ -325,6 +335,7 @@ mod tests {
         let req = RebuildRequest {
             name: "dev-1".to_string(),
             project: "proj".to_string(),
+            build_env: Default::default(),
         };
 
         let result = handle(req, &state).await;

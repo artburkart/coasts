@@ -48,6 +48,10 @@ use coast_core::types::PortMapping;
 use colored::Colorize;
 use rust_i18n::t;
 
+fn current_build_env() -> std::collections::HashMap<String, String> {
+    std::env::vars().collect()
+}
+
 /// Default path for the daemon socket.
 fn socket_path() -> std::path::PathBuf {
     coast_core::artifact::coast_home()

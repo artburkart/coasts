@@ -208,6 +208,7 @@ mod tests {
             commit_sha: None,
             coastfile_type: None,
             force_remove_dangling: false,
+            build_env: Default::default(),
         };
 
         let result = validate_and_insert(&req, &state, &progress).await;
@@ -233,6 +234,7 @@ mod tests {
             commit_sha: None,
             coastfile_type: None,
             force_remove_dangling: false,
+            build_env: Default::default(),
         };
 
         let _ = validate_and_insert(&req, &state, &progress).await.unwrap();
@@ -258,6 +260,7 @@ mod tests {
             commit_sha: None,
             coastfile_type: None,
             force_remove_dangling: false,
+            build_env: Default::default(),
         };
         let req_b = coast_core::protocol::RunRequest {
             name: "main".to_string(),
@@ -268,6 +271,7 @@ mod tests {
             commit_sha: None,
             coastfile_type: None,
             force_remove_dangling: false,
+            build_env: Default::default(),
         };
 
         validate_and_insert(&req_a, &state, &progress)
@@ -317,6 +321,7 @@ mod tests {
             commit_sha: None,
             coastfile_type: None,
             force_remove_dangling: false,
+            build_env: Default::default(),
         };
 
         let result = validate_and_insert(&req, &state, &progress).await;
@@ -342,6 +347,7 @@ mod tests {
             commit_sha: None,
             coastfile_type: None,
             force_remove_dangling: false,
+            build_env: Default::default(),
         };
 
         let _ = validate_and_insert(&req, &state, &tx).await.unwrap();
@@ -369,6 +375,7 @@ mod tests {
             commit_sha: None,
             coastfile_type: None,
             force_remove_dangling: false,
+            build_env: Default::default(),
         };
 
         let _ = validate_and_insert(&req, &state, &tx).await.unwrap();

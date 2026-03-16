@@ -72,7 +72,9 @@ fn test_parse_valid_coastfile() {
     assert_eq!(coastfile.name, "my-app");
     assert_eq!(
         coastfile.compose,
-        Some(vec![PathBuf::from("/home/user/dev/my-app/docker-compose.yml")])
+        Some(vec![PathBuf::from(
+            "/home/user/dev/my-app/docker-compose.yml"
+        )])
     );
     assert_eq!(coastfile.runtime, RuntimeType::Dind);
 }

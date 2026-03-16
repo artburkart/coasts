@@ -245,6 +245,7 @@ async fn assign_worktree(
         commit_sha: None,
         explain: false,
         force_sync: false,
+        build_env: Default::default(),
     };
 
     match super::assign::handle(assign_req, state, progress.clone()).await {
@@ -303,6 +304,7 @@ mod tests {
             build_id: None,
             coastfile_type: None,
             force_remove_dangling: false,
+            build_env: Default::default(),
         };
         let (tx, _rx) = tokio::sync::mpsc::channel(64);
         let result = handle(req, &state, tx).await;
@@ -345,6 +347,7 @@ mod tests {
             build_id: None,
             coastfile_type: None,
             force_remove_dangling: false,
+            build_env: Default::default(),
         };
         let (tx, _rx) = tokio::sync::mpsc::channel(64);
         let result = handle(req, &state, tx).await;
@@ -417,6 +420,7 @@ mod tests {
             build_id: None,
             coastfile_type: None,
             force_remove_dangling: true,
+            build_env: Default::default(),
         };
         let (tx, _rx) = tokio::sync::mpsc::channel(64);
         let result = handle(req, &state, tx).await;

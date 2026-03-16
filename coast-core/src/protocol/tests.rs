@@ -24,6 +24,7 @@ fn test_build_request_roundtrip() {
     roundtrip_request(Request::Build(BuildRequest {
         coastfile_path: PathBuf::from("/home/user/Coastfile"),
         refresh: true,
+        build_env: Default::default(),
     }));
 }
 
@@ -54,6 +55,7 @@ fn test_run_request_roundtrip() {
         build_id: None,
         coastfile_type: None,
         force_remove_dangling: false,
+        build_env: Default::default(),
     }));
 }
 
@@ -68,6 +70,7 @@ fn test_run_request_without_commit_sha_roundtrip() {
         build_id: None,
         coastfile_type: None,
         force_remove_dangling: false,
+        build_env: Default::default(),
     }));
 }
 
@@ -82,6 +85,7 @@ fn test_run_request_with_worktree_roundtrip() {
         build_id: None,
         coastfile_type: None,
         force_remove_dangling: false,
+        build_env: Default::default(),
     }));
 }
 
@@ -94,6 +98,7 @@ fn test_assign_request_roundtrip() {
         commit_sha: Some("deadbeef".to_string()),
         explain: false,
         force_sync: false,
+        build_env: Default::default(),
     }));
 }
 
@@ -106,6 +111,7 @@ fn test_assign_request_without_commit_sha_roundtrip() {
         commit_sha: None,
         explain: false,
         force_sync: false,
+        build_env: Default::default(),
     }));
 }
 
@@ -497,6 +503,7 @@ fn test_rebuild_request_roundtrip() {
     roundtrip_request(Request::Rebuild(RebuildRequest {
         name: "feature-oauth".to_string(),
         project: "my-app".to_string(),
+        build_env: Default::default(),
     }));
 }
 
@@ -1384,6 +1391,7 @@ fn test_assign_request_explain_roundtrip() {
         commit_sha: None,
         explain: true,
         force_sync: false,
+        build_env: Default::default(),
     }));
 }
 
@@ -1396,6 +1404,7 @@ fn test_assign_request_force_sync_roundtrip() {
         commit_sha: None,
         explain: false,
         force_sync: true,
+        build_env: Default::default(),
     }));
 }
 

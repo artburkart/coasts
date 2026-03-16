@@ -20,6 +20,7 @@ pub(super) struct ArchiveBuildRequest<'a> {
     pub coastfile_path: &'a Path,
     pub has_volume_mounts: bool,
     pub secret_container_paths: &'a [String],
+    pub build_env: &'a HashMap<String, String>,
     pub progress: &'a tokio::sync::mpsc::Sender<BuildProgressEvent>,
 }
 
@@ -112,9 +113,16 @@ async fn build_images_inside_dind(
     request: &ArchiveBuildRequest<'_>,
 ) -> Vec<(String, String)> {
     let mut image_tags = Vec::new();
+    let Some((compose_content, directives)) =
+        load_archive_build_directives(request.code_path, request.project)
+    else {
+        return image_tags;
+    };
 
-    for directive in load_archive_build_directives(request.code_path, request.project) {
-        if let Some(tag) = build_image_inside_dind(runtime, request, &directive).await {
+    for directive in directives {
+        if let Some(tag) =
+            build_image_inside_dind(runtime, request, &compose_content, &directive).await
+        {
             image_tags.push(tag);
         }
     }
@@ -122,17 +130,21 @@ async fn build_images_inside_dind(
     image_tags
 }
 
-fn load_archive_build_directives(code_path: &Path, project: &str) -> Vec<ComposeBuildDirective> {
+fn load_archive_build_directives(
+    code_path: &Path,
+    project: &str,
+) -> Option<(String, Vec<ComposeBuildDirective>)> {
     let Some(compose_path) = find_workspace_compose_path(code_path) else {
-        return Vec::new();
+        return None;
     };
     let Ok(compose_content) = std::fs::read_to_string(compose_path) else {
-        return Vec::new();
+        return None;
     };
 
-    coast_docker::compose_build::parse_compose_file(&compose_content, project)
-        .map(|result| result.build_directives)
-        .unwrap_or_default()
+    let directives = coast_docker::compose_build::parse_compose_file(&compose_content, project)
+        .ok()?
+        .build_directives;
+    Some((compose_content, directives))
 }
 
 fn find_workspace_compose_path(code_path: &Path) -> Option<PathBuf> {
@@ -150,6 +162,7 @@ fn find_workspace_compose_path(code_path: &Path) -> Option<PathBuf> {
 async fn build_image_inside_dind(
     runtime: &coast_docker::dind::DindRuntime,
     request: &ArchiveBuildRequest<'_>,
+    compose_content: &str,
     directive: &ComposeBuildDirective,
 ) -> Option<(String, String)> {
     let instance_tag = coast_docker::compose_build::coast_built_instance_image_tag(
@@ -157,21 +170,35 @@ async fn build_image_inside_dind(
         &directive.service_name,
         request.instance_name,
     );
-    let build_context = archive_build_context_path(&directive.context);
+    let mut image_tags = HashMap::new();
+    image_tags.insert(directive.service_name.clone(), instance_tag.clone());
+    let rewritten = match coast_docker::compose_build::rewrite_compose_for_build(
+        compose_content,
+        &image_tags,
+    ) {
+        Ok(content) => content,
+        Err(error) => {
+            emit_archive_build_warning(
+                request.progress,
+                &directive.service_name,
+                error.to_string(),
+            );
+            return None;
+        }
+    };
 
     info!(
         service = %directive.service_name,
         tag = %instance_tag,
-        context = %build_context,
         "building per-instance image inside DinD"
     );
 
     let build_result = execute_image_build_command(
         runtime,
         request.container_id,
-        directive,
-        &instance_tag,
-        &build_context,
+        &directive.service_name,
+        &rewritten,
+        request.build_env,
     )
     .await;
 
@@ -186,18 +213,34 @@ async fn build_image_inside_dind(
 async fn execute_image_build_command(
     runtime: &coast_docker::dind::DindRuntime,
     container_id: &str,
-    directive: &ComposeBuildDirective,
-    instance_tag: &str,
-    build_context: &str,
+    service_name: &str,
+    compose_content: &str,
+    build_env: &HashMap<String, String>,
 ) -> Result<coast_docker::runtime::ExecResult> {
     let _ = runtime
         .exec_in_coast(container_id, &["docker", "builder", "prune", "-af"])
         .await;
-
-    let build_cmd =
-        docker_build_command(instance_tag, build_context, directive.dockerfile.as_deref());
-    let cmd_refs: Vec<&str> = build_cmd.iter().map(std::string::String::as_str).collect();
-    runtime.exec_in_coast(container_id, &cmd_refs).await
+    let write_cmd = format!(
+        "printf '%s' '{}' > /tmp/coast-build/docker-compose.coast-build.yml",
+        compose_content.replace('\'', "'\\''")
+    );
+    let _ = runtime
+        .exec_in_coast(container_id, &["sh", "-lc", &write_cmd])
+        .await;
+    let build_cmd = [
+        "docker",
+        "compose",
+        "-f",
+        "/tmp/coast-build/docker-compose.coast-build.yml",
+        "--project-directory",
+        "/tmp/coast-build",
+        "build",
+        service_name,
+    ];
+    let build_script = crate::handlers::shell_command_with_env(&build_cmd, build_env);
+    runtime
+        .exec_in_coast(container_id, &["sh", "-lc", &build_script])
+        .await
 }
 
 fn handle_image_build_result(
@@ -246,35 +289,6 @@ fn emit_archive_build_warning(
         BuildProgressEvent::item("Building images", service_name, "warn")
             .with_verbose(verbose_detail),
     );
-}
-
-fn archive_build_context_path(context: &str) -> String {
-    if context == "." {
-        "/tmp/coast-build".to_string()
-    } else {
-        format!("/tmp/coast-build/{context}")
-    }
-}
-
-fn docker_build_command(
-    instance_tag: &str,
-    build_context: &str,
-    dockerfile: Option<&str>,
-) -> Vec<String> {
-    let mut build_cmd = vec![
-        "docker".to_string(),
-        "build".to_string(),
-        "-t".to_string(),
-        instance_tag.to_string(),
-    ];
-    if let Some(dockerfile) = dockerfile {
-        if dockerfile != "Dockerfile" {
-            build_cmd.push("-f".to_string());
-            build_cmd.push(format!("{build_context}/{dockerfile}"));
-        }
-    }
-    build_cmd.push(build_context.to_string());
-    build_cmd
 }
 
 async fn write_archive_compose_override(
@@ -472,54 +486,26 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_archive_build_context_path_uses_tmp_root_for_dot() {
-        assert_eq!(archive_build_context_path("."), "/tmp/coast-build");
-        assert_eq!(
-            archive_build_context_path("apps/web"),
-            "/tmp/coast-build/apps/web"
-        );
-    }
+    fn test_load_archive_build_directives_reads_workspace_compose() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("docker-compose.yml"),
+            r#"
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+"#,
+        )
+        .unwrap();
 
-    #[test]
-    fn test_docker_build_command_includes_non_default_dockerfile() {
-        let command = docker_build_command(
-            "coast-built/proj/web:dev-1",
-            "/tmp/coast-build/apps/web",
-            Some("Dockerfile.dev"),
-        );
+        let (compose_content, directives) =
+            load_archive_build_directives(dir.path(), "proj").unwrap();
 
-        assert_eq!(
-            command,
-            vec![
-                "docker",
-                "build",
-                "-t",
-                "coast-built/proj/web:dev-1",
-                "-f",
-                "/tmp/coast-build/apps/web/Dockerfile.dev",
-                "/tmp/coast-build/apps/web"
-            ]
-        );
-    }
-
-    #[test]
-    fn test_docker_build_command_skips_default_dockerfile_flag() {
-        let command = docker_build_command(
-            "coast-built/proj/web:dev-1",
-            "/tmp/coast-build",
-            Some("Dockerfile"),
-        );
-
-        assert_eq!(
-            command,
-            vec![
-                "docker",
-                "build",
-                "-t",
-                "coast-built/proj/web:dev-1",
-                "/tmp/coast-build"
-            ]
-        );
+        assert!(compose_content.contains("Dockerfile.dev"));
+        assert_eq!(directives.len(), 1);
+        assert_eq!(directives[0].service_name, "web");
     }
 
     #[test]

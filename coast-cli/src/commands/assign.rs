@@ -64,6 +64,7 @@ pub async fn execute(args: &AssignArgs, project: &str) -> Result<()> {
         commit_sha,
         explain: args.explain,
         force_sync: args.force_sync,
+        build_env: super::current_build_env(),
     });
 
     if args.explain {

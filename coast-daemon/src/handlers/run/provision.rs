@@ -44,14 +44,19 @@ pub(super) async fn provision_instance(
     progress: &tokio::sync::mpsc::Sender<BuildProgressEvent>,
 ) -> Result<ProvisionResult> {
     let code_path = resolve_code_path(&req.project, validated.build_id.as_deref());
+    let artifact_dir = resolve_artifact_dir(&req.project, validated.build_id.as_deref());
+    let coastfile_path = artifact_dir.join("coastfile.toml");
     let uses_archive_build =
         detect_archive_build(validated.has_compose, req.branch.as_deref(), &code_path).await;
 
-    let per_instance_image_tags =
-        build_host_images(validated, uses_archive_build, &code_path, req, progress).await;
-
-    let artifact_dir = resolve_artifact_dir(&req.project, validated.build_id.as_deref());
-    let coastfile_path = artifact_dir.join("coastfile.toml");
+    let per_instance_image_tags = build_host_images(
+        validated,
+        uses_archive_build,
+        &coastfile_path,
+        req,
+        progress,
+    )
+    .await;
 
     let resources = load_coastfile_resources(&coastfile_path, req, state, progress).await?;
 
@@ -135,6 +140,7 @@ pub(super) async fn provision_instance(
                 coastfile_path: &coastfile_path,
                 has_volume_mounts,
                 secret_container_paths: &secret_container_paths,
+                build_env: &req.build_env,
                 progress,
             },
         )
@@ -264,7 +270,7 @@ async fn detect_archive_build(
 async fn build_host_images(
     validated: &ValidatedRun,
     uses_archive_build: bool,
-    code_path: &std::path::Path,
+    coastfile_path: &std::path::Path,
     req: &RunRequest,
     progress: &tokio::sync::mpsc::Sender<BuildProgressEvent>,
 ) -> Vec<(String, String)> {
@@ -276,9 +282,10 @@ async fn build_host_images(
         BuildProgressEvent::started("Building images", 2, validated.total_steps),
     );
     let tags = host_builds::build_per_instance_images_on_host(
-        code_path,
+        coastfile_path,
         &req.project,
         &req.name,
+        &req.build_env,
         progress,
     )
     .await;
@@ -758,6 +765,7 @@ mod tests {
             commit_sha: None,
             coastfile_type: None,
             force_remove_dangling: false,
+            build_env: Default::default(),
         }
     }
 

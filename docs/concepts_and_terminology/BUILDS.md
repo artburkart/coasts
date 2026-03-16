@@ -62,7 +62,7 @@ This means build artifacts are safe to inspect without exposing sensitive data. 
 
 A build involves three kinds of Docker images:
 
-- **Built images** -- compose services with `build:` directives are built on the host via `docker build`, tagged as `coast-built/{project}/{service}:latest`, and saved as tarballs in the image cache.
+- **Built images** -- compose services with `build:` directives are built through Docker Compose so the full compose `build:` block is honored (for example `args`, `target`, `ssh`, and build secrets), tagged as `coast-built/{project}/{service}:latest`, and saved as tarballs in the image cache.
 - **Pulled images** -- compose services with `image:` directives are pulled and saved as tarballs.
 - **Coast image** -- if `[coast.setup]` is configured, a custom Docker image is built on top of `docker:dind` with the specified packages, commands, and files. Tagged as `coast-image/{project}:{build_id}`.
 
@@ -77,6 +77,8 @@ You do not need to rebuild to create more instances. One build can serve many Co
 ## When to Rebuild
 
 Only rebuild when your Coastfile, `docker-compose.yml`, or infrastructure configuration changes. Rebuilding is resource-intensive -- it re-pulls images, re-builds Docker images, and re-extracts secrets.
+
+Build-time environment variables come from the shell that invoked the Coast command, not from whatever long-lived environment the daemon happens to have. This keeps `coast build`, `coast run`, `coast assign`, and `coast rebuild` aligned when your compose build uses env-backed args or secrets such as `GITHUB_TOKEN`.
 
 Code changes do not require a rebuild. Coast mounts your project directory directly into each instance, so code updates are picked up immediately.
 

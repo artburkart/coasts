@@ -136,6 +136,7 @@ pub(super) async fn run_docker_steps(p: DockerStepsParams<'_>) -> Result<()> {
         p.project_root,
         &p.req.project,
         &p.req.name,
+        &p.req.build_env,
         p.progress,
     )
     .await;
@@ -1138,6 +1139,7 @@ async fn build_images(
     project_root: &Option<std::path::PathBuf>,
     project: &str,
     instance_name: &str,
+    build_env: &std::collections::HashMap<String, String>,
     progress: &tokio::sync::mpsc::Sender<BuildProgressEvent>,
 ) -> Vec<(String, String)> {
     let compose_path = artifact_dir.join("compose.yml");
@@ -1151,7 +1153,8 @@ async fn build_images(
     }
 
     let compose_to_parse = resolve_compose_path(project_root, &compose_path);
-    let Some(directives) = parse_build_directives(&compose_to_parse, project) else {
+    let Some((compose_content, directives)) = parse_build_directives(&compose_to_parse, project)
+    else {
         return Vec::new();
     };
 
@@ -1165,7 +1168,9 @@ async fn build_images(
             container_id,
             project,
             instance_name,
+            &compose_content,
             directive,
+            build_env,
             progress,
         )
         .await;
@@ -1192,18 +1197,13 @@ fn resolve_compose_path(
 fn parse_build_directives(
     compose_path: &std::path::Path,
     project: &str,
-) -> Option<Vec<coast_docker::compose_build::ComposeBuildDirective>> {
+) -> Option<(
+    String,
+    Vec<coast_docker::compose_build::ComposeBuildDirective>,
+)> {
     let content = std::fs::read_to_string(compose_path).ok()?;
     let parsed = coast_docker::compose_build::parse_compose_file(&content, project).ok()?;
-    Some(parsed.build_directives)
-}
-
-fn image_build_context(directive_context: &str) -> String {
-    if directive_context == "." {
-        "/workspace".to_string()
-    } else {
-        format!("/workspace/{directive_context}")
-    }
+    Some((content, parsed.build_directives))
 }
 
 async fn build_single_image(
@@ -1211,29 +1211,62 @@ async fn build_single_image(
     container_id: &str,
     project: &str,
     instance_name: &str,
+    compose_content: &str,
     directive: &coast_docker::compose_build::ComposeBuildDirective,
+    build_env: &std::collections::HashMap<String, String>,
     progress: &tokio::sync::mpsc::Sender<BuildProgressEvent>,
 ) -> Option<(String, String)> {
     let svc = &directive.service_name;
     let tag =
         coast_docker::compose_build::coast_built_instance_image_tag(project, svc, instance_name);
-    let build_context = image_build_context(&directive.context);
+    let mut image_tags = std::collections::HashMap::new();
+    image_tags.insert(svc.to_string(), tag.clone());
+    let rewritten = match coast_docker::compose_build::rewrite_compose_for_build(
+        compose_content,
+        &image_tags,
+    ) {
+        Ok(content) => content,
+        Err(error) => {
+            emit(
+                progress,
+                BuildProgressEvent::item("Building images", svc, "warn")
+                    .with_verbose(error.to_string()),
+            )
+            .await;
+            return None;
+        }
+    };
+    let write_cmd = format!(
+        "printf '%s' '{}' > /coast-override/docker-compose.build.yml",
+        rewritten.replace('\'', "'\\''")
+    );
 
     emit(
         progress,
         BuildProgressEvent::item("Building images", svc, "started"),
     )
     .await;
-    info!(service = %svc, tag = %tag, context = %build_context, "building per-instance image inside DinD");
+    info!(service = %svc, tag = %tag, "building per-instance image inside DinD");
 
     let _ = rt
         .exec_in_coast(container_id, &["docker", "builder", "prune", "-af"])
         .await;
+    let _ = rt
+        .exec_in_coast(container_id, &["sh", "-lc", &write_cmd])
+        .await;
+    let build_cmd = [
+        "docker",
+        "compose",
+        "-f",
+        "/coast-override/docker-compose.build.yml",
+        "--project-directory",
+        "/workspace",
+        "build",
+        svc,
+    ];
+    let build_script = crate::handlers::shell_command_with_env(&build_cmd, build_env);
     let build_result = rt
-        .exec_in_coast(
-            container_id,
-            &["docker", "build", "-t", &tag, &build_context],
-        )
+        .exec_in_coast(container_id, &["sh", "-lc", &build_script])
         .await;
 
     report_build_result(build_result, svc, &tag, progress).await

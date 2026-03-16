@@ -28,6 +28,8 @@ struct ImageBuildContext<'a> {
     docker: Option<&'a bollard::Docker>,
     cache_dir: &'a Path,
     compose_dir: &'a Path,
+    compose_content: &'a str,
+    build_env: &'a std::collections::HashMap<String, String>,
     progress: &'a tokio::sync::mpsc::Sender<BuildProgressEvent>,
     plan: &'a BuildPlan,
 }
@@ -59,6 +61,9 @@ pub(super) async fn cache_images(
         }
         return Ok(output);
     };
+    let Some(compose_content) = compose_analysis.content.as_deref() else {
+        return Ok(output);
+    };
 
     let compose_dir = compose_analysis
         .dir
@@ -69,6 +74,8 @@ pub(super) async fn cache_images(
         docker: state.docker.as_ref(),
         cache_dir: &cache_dir,
         compose_dir,
+        compose_content,
+        build_env: &req.build_env,
         progress,
         plan,
     };
@@ -98,8 +105,10 @@ async fn cache_built_images(
         );
         match coast_docker::compose_build::build_and_cache_image(
             directive,
+            context.compose_content,
             context.compose_dir,
             context.cache_dir,
+            context.build_env,
         )
         .await
         {

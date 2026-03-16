@@ -4,6 +4,7 @@
 /// interacts with the state DB and Docker API as needed, and returns
 /// a protocol `Response`.
 use coast_core::protocol::*;
+use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::{error, warn};
 
@@ -66,6 +67,32 @@ impl ComposeContext {
 
         vec!["sh".into(), "-c".into(), script]
     }
+}
+
+pub(crate) fn shell_escape(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\\''"))
+}
+
+pub(crate) fn shell_command_with_env(command: &[&str], env: &HashMap<String, String>) -> String {
+    let mut script = String::new();
+    if !env.is_empty() {
+        script.push_str("env");
+        for (key, value) in env {
+            script.push(' ');
+            script.push_str(key);
+            script.push('=');
+            script.push_str(&shell_escape(value));
+        }
+        script.push(' ');
+    }
+    script.push_str(
+        &command
+            .iter()
+            .map(|arg| shell_escape(arg))
+            .collect::<Vec<_>>()
+            .join(" "),
+    );
+    script
 }
 
 /// Derive compose context for a Coast project by reading the stored Coastfile.

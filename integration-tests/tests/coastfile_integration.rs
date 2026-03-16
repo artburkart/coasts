@@ -472,7 +472,9 @@ compose = "./docker-compose.yml"
     let cf = Coastfile::parse(toml, root).unwrap();
     assert_eq!(
         cf.compose,
-        Some(vec![PathBuf::from("/home/user/dev/project/docker-compose.yml")])
+        Some(vec![PathBuf::from(
+            "/home/user/dev/project/docker-compose.yml"
+        )])
     );
 }
 

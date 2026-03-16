@@ -21,6 +21,7 @@ pub async fn execute(args: &RebuildArgs, project: &str) -> Result<()> {
     let request = Request::Rebuild(RebuildRequest {
         name: args.name.clone(),
         project: project.to_string(),
+        build_env: super::current_build_env(),
     });
 
     let response = super::send_request(request).await?;

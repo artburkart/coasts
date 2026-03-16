@@ -520,6 +520,7 @@ mod tests {
             Request::Build(BuildRequest {
                 coastfile_path: std::path::PathBuf::new(),
                 refresh: false,
+                build_env: Default::default(),
             }),
             Request::RerunExtractors(RerunExtractorsRequest {
                 project: String::new(),
@@ -534,6 +535,7 @@ mod tests {
                 build_id: None,
                 coastfile_type: None,
                 force_remove_dangling: false,
+                build_env: Default::default(),
             }),
             Request::Stop(StopRequest {
                 project: String::new(),
@@ -596,6 +598,7 @@ mod tests {
                 commit_sha: None,
                 explain: false,
                 force_sync: false,
+                build_env: Default::default(),
             }),
             Request::Unassign(UnassignRequest {
                 project: String::new(),
@@ -604,6 +607,7 @@ mod tests {
             Request::Rebuild(RebuildRequest {
                 project: String::new(),
                 name: String::new(),
+                build_env: Default::default(),
             }),
             Request::RmBuild(RmBuildRequest {
                 project: String::new(),

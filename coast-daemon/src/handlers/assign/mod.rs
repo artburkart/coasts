@@ -225,6 +225,7 @@ mod tests {
             commit_sha: None,
             explain: false,
             force_sync: false,
+            build_env: Default::default(),
         };
 
         let result = handle(req, &state, discard_progress()).await;
@@ -247,6 +248,7 @@ mod tests {
             commit_sha: None,
             explain: false,
             force_sync: false,
+            build_env: Default::default(),
         };
 
         let result = handle(req, &state, discard_progress()).await;
@@ -274,6 +276,7 @@ mod tests {
             commit_sha: None,
             explain: false,
             force_sync: false,
+            build_env: Default::default(),
         };
 
         let result = handle(req, &state, discard_progress()).await;
@@ -312,6 +315,7 @@ mod tests {
             commit_sha: None,
             explain: false,
             force_sync: false,
+            build_env: Default::default(),
         };
 
         let result = handle(req, &state, discard_progress()).await;
@@ -336,6 +340,7 @@ mod tests {
             commit_sha: None,
             explain: false,
             force_sync: false,
+            build_env: Default::default(),
         };
 
         let result = handle(req, &state, discard_progress()).await;
@@ -377,6 +382,7 @@ mod tests {
             commit_sha: None,
             explain: false,
             force_sync: false,
+            build_env: Default::default(),
         };
 
         let result = handle(req, &state, discard_progress()).await;
@@ -399,6 +405,7 @@ mod tests {
             commit_sha: None,
             explain: false,
             force_sync: false,
+            build_env: Default::default(),
         };
 
         let _ = handle(req, &state, discard_progress()).await;
@@ -438,6 +445,7 @@ mod tests {
             commit_sha: None,
             explain: false,
             force_sync: false,
+            build_env: Default::default(),
         };
 
         let result = handle(req, &state, discard_progress()).await;
@@ -463,6 +471,7 @@ mod tests {
             commit_sha: None,
             explain: false,
             force_sync: false,
+            build_env: Default::default(),
         };
 
         let result = handle(req, &state, discard_progress()).await;
@@ -504,6 +513,7 @@ mod tests {
             commit_sha: None,
             explain: false,
             force_sync: false,
+            build_env: Default::default(),
         };
 
         let result = handle(req, &state, discard_progress()).await;
@@ -534,6 +544,7 @@ mod tests {
             commit_sha: None,
             explain: false,
             force_sync: false,
+            build_env: Default::default(),
         };
 
         let result = handle(req, &state, tx).await;

@@ -175,6 +175,7 @@ pub async fn execute(args: &RunArgs, project: &str) -> Result<()> {
             build_id: None,
             coastfile_type: args.coastfile_type.clone(),
             force_remove_dangling: args.force_remove_dangling,
+            build_env: super::current_build_env(),
         });
 
         let mut display = ProgressDisplay::new(verbosity);

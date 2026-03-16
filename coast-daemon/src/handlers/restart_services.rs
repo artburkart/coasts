@@ -80,11 +80,7 @@ pub async fn handle(
             trimmed == "autostart = false" || trimmed.starts_with("autostart = false ")
         });
         match coast_core::coastfile::Coastfile::from_file(&coastfile_path) {
-            Ok(cf) => (
-                cf.has_compose(),
-                !cf.services.is_empty(),
-                !autostart_false,
-            ),
+            Ok(cf) => (cf.has_compose(), !cf.services.is_empty(), !autostart_false),
             Err(_) => (true, false, !autostart_false),
         }
     } else {

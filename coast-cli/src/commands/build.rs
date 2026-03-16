@@ -375,6 +375,7 @@ pub async fn execute(args: &BuildArgs) -> Result<()> {
     let request = Request::Build(BuildRequest {
         coastfile_path,
         refresh: args.refresh,
+        build_env: super::current_build_env(),
     });
 
     let verbosity = if args.silent {

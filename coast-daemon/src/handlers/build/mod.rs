@@ -206,6 +206,7 @@ mod tests {
         let req = BuildRequest {
             coastfile_path: PathBuf::from("/tmp/nonexistent/Coastfile"),
             refresh: false,
+            build_env: Default::default(),
         };
         let result = handle(req, &state, test_progress_sender()).await;
         assert!(result.is_err());
@@ -230,6 +231,7 @@ compose = "./docker-compose.yml"
         let req = BuildRequest {
             coastfile_path,
             refresh: false,
+            build_env: Default::default(),
         };
         let resp = handle(req, &state, test_progress_sender()).await.unwrap();
         assert_eq!(resp.project, "test-build");
@@ -266,6 +268,7 @@ mount = "/var/lib/postgresql/data"
         let req = BuildRequest {
             coastfile_path,
             refresh: false,
+            build_env: Default::default(),
         };
         let result = handle(req, &state, test_progress_sender()).await.unwrap();
         assert!(!result.warnings.is_empty());
@@ -294,6 +297,7 @@ files = ["/tmp/nonexistent_coast_test_file_12345"]
         let req = BuildRequest {
             coastfile_path,
             refresh: false,
+            build_env: Default::default(),
         };
         let result = handle(req, &state, test_progress_sender()).await.unwrap();
         assert!(result
@@ -328,6 +332,7 @@ compose = "./docker-compose.yml"
         let req = BuildRequest {
             coastfile_path,
             refresh: false,
+            build_env: Default::default(),
         };
         let result = handle(req, &state, test_progress_sender()).await.unwrap();
 
@@ -367,6 +372,7 @@ run = ["echo hello"]
         let req = BuildRequest {
             coastfile_path,
             refresh: false,
+            build_env: Default::default(),
         };
         let result = handle(req, &state, test_progress_sender()).await;
         if let Ok(resp) = result {
@@ -394,6 +400,7 @@ compose = "./docker-compose.yml"
         let req = BuildRequest {
             coastfile_path,
             refresh: false,
+            build_env: Default::default(),
         };
         let result = handle(req, &state, test_progress_sender()).await.unwrap();
         assert!(result.coast_image.is_none());
@@ -418,6 +425,7 @@ compose = "./docker-compose.yml"
         let req = BuildRequest {
             coastfile_path,
             refresh: false,
+            build_env: Default::default(),
         };
         let result = handle(req, &state, test_progress_sender()).await.unwrap();
 
@@ -457,6 +465,7 @@ compose = "./docker-compose.yml"
         let req = BuildRequest {
             coastfile_path,
             refresh: false,
+            build_env: Default::default(),
         };
         let (tx, mut rx) = tokio::sync::mpsc::channel(64);
         let _result = handle(req, &state, tx).await.unwrap();
@@ -566,6 +575,7 @@ ttl = "1h"
         let req = BuildRequest {
             coastfile_path,
             refresh: false,
+            build_env: Default::default(),
         };
         let (tx, mut rx) = tokio::sync::mpsc::channel(64);
         let result = handle(req, &state, tx).await.unwrap();
@@ -622,6 +632,7 @@ compose = "./docker-compose.yml"
         let req = BuildRequest {
             coastfile_path,
             refresh: false,
+            build_env: Default::default(),
         };
         let (tx, mut rx) = tokio::sync::mpsc::channel(64);
         let result = handle(req, &state, tx).await.unwrap();
@@ -697,6 +708,7 @@ volumes:
         let req = BuildRequest {
             coastfile_path,
             refresh: false,
+            build_env: Default::default(),
         };
         let result = handle(req, &state, test_progress_sender()).await.unwrap();
 

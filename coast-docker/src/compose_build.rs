@@ -3,6 +3,7 @@
 /// During `coast build`, this module detects services with `build:` directives,
 /// builds those images on the host, caches them as tarballs, and rewrites the
 /// compose file to reference the pre-built images instead.
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use tracing::info;
@@ -290,73 +291,135 @@ pub fn parse_dockerfile_base_images(dockerfile_content: &str) -> Vec<String> {
     images
 }
 
-/// Construct the `docker build` command for a build directive.
-///
-/// Returns the command as a vector of strings suitable for `tokio::process::Command`.
-pub fn docker_build_cmd(directive: &ComposeBuildDirective, compose_dir: &Path) -> Vec<String> {
-    let mut cmd = vec![
-        "docker".to_string(),
-        "build".to_string(),
-        "-t".to_string(),
-        directive.coast_image_tag.clone(),
-    ];
+pub fn rewrite_compose_for_build(
+    content: &str,
+    image_tags: &HashMap<String, String>,
+) -> Result<String> {
+    let mut doc: serde_yaml::Value = serde_yaml::from_str(content)
+        .map_err(|e| CoastError::coastfile(format!("failed to parse compose YAML: {e}")))?;
 
-    if let Some(ref df) = directive.dockerfile {
-        cmd.push("-f".to_string());
-        cmd.push(
-            compose_dir
-                .join(&directive.context)
-                .join(df)
-                .display()
-                .to_string(),
-        );
+    let Some(serde_yaml::Value::Mapping(services)) = doc.get_mut("services") else {
+        return Ok(content.to_string());
+    };
+
+    for (key, value) in services.iter_mut() {
+        let service_name = key.as_str().unwrap_or_default();
+        if service_name.is_empty() {
+            continue;
+        }
+
+        let Some(image_tag) = image_tags.get(service_name) else {
+            continue;
+        };
+
+        if let serde_yaml::Value::Mapping(svc) = value {
+            let image_key = serde_yaml::Value::String("image".to_string());
+            svc.insert(image_key, serde_yaml::Value::String(image_tag.clone()));
+        }
     }
 
-    cmd.push(compose_dir.join(&directive.context).display().to_string());
+    serde_yaml::to_string(&doc)
+        .map_err(|e| CoastError::coastfile(format!("failed to serialize tagged compose YAML: {e}")))
+}
 
-    cmd
+/// Construct the `docker compose build` command for a build directive.
+pub fn docker_compose_build_cmd(
+    compose_file: &Path,
+    compose_dir: &Path,
+    service_name: &str,
+) -> Vec<String> {
+    vec![
+        "docker".to_string(),
+        "compose".to_string(),
+        "-f".to_string(),
+        compose_file.display().to_string(),
+        "--project-directory".to_string(),
+        compose_dir.display().to_string(),
+        "build".to_string(),
+        service_name.to_string(),
+    ]
 }
 
 /// Build an image on the host and save it as a tarball in the cache directory.
 ///
 /// Runs `docker build` followed by `docker save` using `tokio::process::Command`.
 /// Returns the path to the saved tarball.
-pub async fn build_and_cache_image(
+async fn run_compose_build(
     directive: &ComposeBuildDirective,
+    compose_content: &str,
     compose_dir: &Path,
-    cache_dir: &Path,
-) -> Result<PathBuf> {
-    let cmd_args = docker_build_cmd(directive, compose_dir);
+    build_env: &HashMap<String, String>,
+) -> Result<()> {
+    let mut tag_map = HashMap::new();
+    tag_map.insert(
+        directive.service_name.clone(),
+        directive.coast_image_tag.clone(),
+    );
+    let rewritten = rewrite_compose_for_build(compose_content, &tag_map)?;
+    let tempdir = tempfile::tempdir().map_err(|e| {
+        CoastError::docker(format!(
+            "failed to create temporary compose build directory: {e}"
+        ))
+    })?;
+    let temp_compose = tempdir.path().join("docker-compose.coast-build.yml");
+    std::fs::write(&temp_compose, rewritten).map_err(|e| {
+        CoastError::docker(format!(
+            "failed to write temporary compose build file '{}': {e}",
+            temp_compose.display()
+        ))
+    })?;
+    let cmd_args = docker_compose_build_cmd(&temp_compose, compose_dir, &directive.service_name);
     info!(
         service = %directive.service_name,
         tag = %directive.coast_image_tag,
         "building image from compose build: directive"
     );
 
-    // Run docker build
     let output = tokio::process::Command::new(&cmd_args[0])
         .args(&cmd_args[1..])
+        .envs(build_env)
         .output()
         .await
         .map_err(|e| {
             CoastError::docker(format!(
-                "failed to run docker build for service '{}': {}. \
-                 Ensure Docker is running and the build context exists at '{}'.",
+                "failed to run docker compose build for service '{}': {}. \
+                 Ensure Docker is running and the compose project exists at '{}'.",
                 directive.service_name,
                 e,
-                compose_dir.join(&directive.context).display()
+                compose_dir.display()
             ))
         })?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(CoastError::docker(format!(
-            "docker build failed for service '{}' (exit code {}):\n{}",
+            "docker compose build failed for service '{}' (exit code {}):\n{}",
             directive.service_name,
             output.status.code().unwrap_or(-1),
             stderr
         )));
     }
+
+    Ok(())
+}
+
+pub async fn build_image_on_host(
+    directive: &ComposeBuildDirective,
+    compose_content: &str,
+    compose_dir: &Path,
+    build_env: &HashMap<String, String>,
+) -> Result<()> {
+    run_compose_build(directive, compose_content, compose_dir, build_env).await
+}
+
+pub async fn build_and_cache_image(
+    directive: &ComposeBuildDirective,
+    compose_content: &str,
+    compose_dir: &Path,
+    cache_dir: &Path,
+    build_env: &HashMap<String, String>,
+) -> Result<PathBuf> {
+    run_compose_build(directive, compose_content, compose_dir, build_env).await?;
 
     info!(
         service = %directive.service_name,
@@ -636,49 +699,49 @@ services:
     }
 
     #[test]
-    fn test_docker_build_cmd_simple() {
-        let directive = ComposeBuildDirective {
-            service_name: "app".to_string(),
-            context: ".".to_string(),
-            dockerfile: None,
-            coast_image_tag: "coast-built/proj/app:latest".to_string(),
-        };
-        let cmd = docker_build_cmd(&directive, Path::new("/home/user/project"));
+    fn test_docker_compose_build_cmd_simple() {
+        let cmd = docker_compose_build_cmd(
+            Path::new("/tmp/coast-build.yml"),
+            Path::new("/home/user/project"),
+            "app",
+        );
         assert_eq!(cmd[0], "docker");
-        assert_eq!(cmd[1], "build");
-        assert_eq!(cmd[2], "-t");
-        assert_eq!(cmd[3], "coast-built/proj/app:latest");
-        assert_eq!(cmd[4], "/home/user/project/.");
+        assert_eq!(cmd[1], "compose");
+        assert_eq!(cmd[2], "-f");
+        assert_eq!(cmd[3], "/tmp/coast-build.yml");
+        assert_eq!(cmd[4], "--project-directory");
+        assert_eq!(cmd[5], "/home/user/project");
+        assert_eq!(cmd[6], "build");
+        assert_eq!(cmd[7], "app");
     }
 
     #[test]
-    fn test_docker_build_cmd_with_dockerfile() {
-        let directive = ComposeBuildDirective {
-            service_name: "app".to_string(),
-            context: "./docker".to_string(),
-            dockerfile: Some("Dockerfile.prod".to_string()),
-            coast_image_tag: "coast-built/proj/app:latest".to_string(),
-        };
-        let cmd = docker_build_cmd(&directive, Path::new("/project"));
-        assert_eq!(cmd[0], "docker");
-        assert_eq!(cmd[1], "build");
-        assert_eq!(cmd[2], "-t");
-        assert_eq!(cmd[3], "coast-built/proj/app:latest");
-        assert_eq!(cmd[4], "-f");
-        assert_eq!(cmd[5], "/project/./docker/Dockerfile.prod");
-        assert_eq!(cmd[6], "/project/./docker");
-    }
+    fn test_rewrite_compose_for_build_preserves_build_and_adds_tagged_image() {
+        let yaml = r#"
+services:
+  app:
+    build:
+      context: .
+      target: dev
+  worker:
+    build: ./worker
+"#;
+        let mut tags = HashMap::new();
+        tags.insert("app".to_string(), "coast-built/proj/app:latest".to_string());
 
-    #[test]
-    fn test_docker_build_cmd_subdir_context() {
-        let directive = ComposeBuildDirective {
-            service_name: "worker".to_string(),
-            context: "./services/worker".to_string(),
-            dockerfile: None,
-            coast_image_tag: "coast-built/proj/worker:latest".to_string(),
-        };
-        let cmd = docker_build_cmd(&directive, Path::new("/app"));
-        assert_eq!(cmd.last().unwrap(), "/app/./services/worker");
+        let rewritten = rewrite_compose_for_build(yaml, &tags).unwrap();
+        let doc: serde_yaml::Value = serde_yaml::from_str(&rewritten).unwrap();
+        let services = doc.get("services").unwrap();
+        let app = services.get("app").unwrap();
+        let worker = services.get("worker").unwrap();
+
+        assert!(app.get("build").is_some());
+        assert_eq!(
+            app.get("image").unwrap().as_str().unwrap(),
+            "coast-built/proj/app:latest"
+        );
+        assert!(worker.get("build").is_some());
+        assert!(worker.get("image").is_none());
     }
 
     #[test]
