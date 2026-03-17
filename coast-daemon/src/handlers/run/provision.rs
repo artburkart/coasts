@@ -11,6 +11,7 @@ use crate::handlers::shared_service_routing::{
 };
 use crate::server::AppState;
 
+use super::paths;
 use super::service_start::{start_and_wait_for_services, StartServicesRequest};
 use super::validate::ValidatedRun;
 use super::{
@@ -105,6 +106,7 @@ pub(super) async fn provision_instance(
             &per_instance_image_tags,
             has_volume_mounts,
             &secret_container_paths,
+            Some(paths::SHARED_CADDY_PKI_CONTAINER_PATH),
             &req.project,
             &req.name,
         );
@@ -191,8 +193,7 @@ pub(super) async fn provision_instance(
 // ---------------------------------------------------------------------------
 
 fn resolve_code_path(project: &str, build_id: Option<&str>) -> std::path::PathBuf {
-    let home = dirs::home_dir().unwrap_or_default();
-    let project_dir = home.join(".coast").join("images").join(project);
+    let project_dir = paths::project_images_dir(project);
     let manifest_path = build_id
         .map(|bid| project_dir.join(bid).join("manifest.json"))
         .filter(|p| p.exists())
@@ -213,8 +214,7 @@ fn resolve_code_path(project: &str, build_id: Option<&str>) -> std::path::PathBu
 }
 
 fn resolve_artifact_dir(project: &str, build_id: Option<&str>) -> std::path::PathBuf {
-    let home = dirs::home_dir().unwrap_or_default();
-    let project_images_dir = home.join(".coast").join("images").join(project);
+    let project_images_dir = paths::project_images_dir(project);
     if let Some(bid) = build_id {
         let resolved = project_images_dir.join(bid);
         if resolved.exists() {
@@ -383,6 +383,7 @@ fn rewrite_compose(
     per_instance_image_tags: &[(String, String)],
     has_volume_mounts: bool,
     secret_container_paths: &[String],
+    shared_caddy_pki_container_path: Option<&str>,
     project: &str,
     instance_name: &str,
 ) {
@@ -417,6 +418,7 @@ fn rewrite_compose(
             per_instance_image_tags,
             has_volume_mounts,
             secret_container_paths,
+            shared_caddy_pki_container_path,
             project,
             instance_name,
             hot_services: &hot_svcs,
@@ -435,8 +437,7 @@ async fn create_container(
     pre_allocated_ports: &[(String, u16, u16)],
     progress: &tokio::sync::mpsc::Sender<BuildProgressEvent>,
 ) -> Result<String> {
-    let home = dirs::home_dir().unwrap_or_default();
-    let image_cache_dir = home.join(".coast").join("image-cache");
+    let image_cache_dir = paths::image_cache_dir();
     let image_cache_path = if image_cache_dir.exists() {
         Some(image_cache_dir.as_path())
     } else {
@@ -452,17 +453,20 @@ async fn create_container(
 
     let coast_image = read_coast_image(&artifact_dir_path);
 
-    let override_dir_path = home
-        .join(".coast")
-        .join("overrides")
-        .join(&req.project)
-        .join(&req.name);
+    let override_dir_path = paths::override_dir(&req.project, &req.name);
     std::fs::create_dir_all(&override_dir_path).map_err(|error| CoastError::Io {
         message: format!("failed to create override directory: {error}"),
         path: override_dir_path.clone(),
         source: Some(error),
     })?;
     let override_dir_opt = Some(override_dir_path.as_path());
+
+    let shared_caddy_pki_host_dir = paths::shared_caddy_pki_host_dir();
+    std::fs::create_dir_all(&shared_caddy_pki_host_dir).map_err(|error| CoastError::Io {
+        message: format!("failed to create shared Caddy PKI directory: {error}"),
+        path: shared_caddy_pki_host_dir.clone(),
+        source: Some(error),
+    })?;
 
     let dind_extra_hosts = vec!["host.docker.internal:host-gateway".to_string()];
 
@@ -483,6 +487,7 @@ async fn create_container(
         override_dir_opt,
         dind_extra_hosts,
     );
+    append_shared_caddy_pki_bind_mount(&mut config, &shared_caddy_pki_host_dir);
 
     for (_name, canonical, dynamic) in pre_allocated_ports {
         config
@@ -514,6 +519,18 @@ async fn create_container(
         BuildProgressEvent::done("Creating container", "ok"),
     );
     Ok(container_id)
+}
+
+fn append_shared_caddy_pki_bind_mount(
+    config: &mut coast_docker::runtime::ContainerConfig,
+    shared_caddy_pki_host_dir: &std::path::Path,
+) {
+    config.bind_mounts.push(coast_docker::runtime::BindMount {
+        host_path: shared_caddy_pki_host_dir.to_path_buf(),
+        container_path: paths::SHARED_CADDY_PKI_CONTAINER_PATH.to_string(),
+        read_only: false,
+        propagation: None,
+    });
 }
 
 fn read_coast_image(artifact_dir: &std::path::Path) -> Option<String> {
@@ -559,8 +576,7 @@ async fn load_cached_images(
         BuildProgressEvent::started("Loading cached images", loading_step, validated.total_steps),
     );
 
-    let home = dirs::home_dir().unwrap_or_default();
-    let cache_dir = home.join(".coast").join("image-cache");
+    let cache_dir = paths::image_cache_dir();
     if cache_dir.exists() {
         let tarball_names = image_loading::collect_project_tarballs(&cache_dir, project);
         if !tarball_names.is_empty() {
@@ -800,6 +816,21 @@ mod tests {
             result.is_none(),
             "should return None when coast_image field is missing"
         );
+    }
+
+    #[test]
+    fn test_append_shared_caddy_pki_bind_mount_adds_outer_runtime_mount() {
+        let mut config =
+            coast_docker::runtime::ContainerConfig::new("proj", "dev-1", "docker:dind");
+        let host_dir = std::path::Path::new("/tmp/coast-home/caddy/pki");
+
+        append_shared_caddy_pki_bind_mount(&mut config, host_dir);
+
+        assert!(config.bind_mounts.iter().any(|mount| {
+            mount.host_path == host_dir
+                && mount.container_path == paths::SHARED_CADDY_PKI_CONTAINER_PATH
+                && !mount.read_only
+        }));
     }
 
     #[tokio::test]

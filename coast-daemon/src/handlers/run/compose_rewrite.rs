@@ -3,6 +3,8 @@ use std::path::{Path, PathBuf};
 
 use tracing::info;
 
+use super::paths;
+
 type YamlMapping = serde_yaml::Mapping;
 
 /// Configuration for rewriting a compose file for a coast instance.
@@ -17,6 +19,8 @@ pub(super) struct ComposeRewriteConfig<'a> {
     pub has_volume_mounts: bool,
     /// Container paths of secret bind mounts to inject into each service.
     pub secret_container_paths: &'a [String],
+    /// Shared Caddy PKI directory mounted into the outer runtime container.
+    pub shared_caddy_pki_container_path: Option<&'a str>,
     /// Project name (used for override directory path).
     pub project: &'a str,
     /// Instance name (used for override directory path).
@@ -30,7 +34,7 @@ pub(super) struct ComposeRewriteConfig<'a> {
 /// Rewrite a compose file for a coast instance and write to disk.
 ///
 /// Delegates to [`rewrite_compose_yaml`] for the YAML transformation, then
-/// writes the result to `~/.coast/overrides/{project}/{instance}/docker-compose.coast.yml`.
+/// writes the result to `$COAST_HOME/overrides/{project}/{instance}/docker-compose.coast.yml`.
 pub(super) fn rewrite_compose_for_instance(
     compose_content: &str,
     config: &ComposeRewriteConfig<'_>,
@@ -77,7 +81,7 @@ pub(super) fn rewrite_compose_yaml(
     needs_write |= remove_omitted_volumes(&mut yaml, coastfile.as_ref());
     needs_write |= apply_image_overrides(&mut yaml, config.per_instance_image_tags);
     needs_write |= apply_coast_managed_volume_overrides(&mut yaml, coastfile.as_ref(), config);
-    needs_write |= add_service_hosts_and_secret_mounts(&mut yaml, config);
+    needs_write |= add_service_hosts_and_mounts(&mut yaml, config);
     needs_write |= apply_hot_service_rslave_overrides(&mut yaml, config);
 
     if needs_write {
@@ -342,7 +346,7 @@ fn coast_managed_volume_definition(volume_name: &str) -> serde_yaml::Value {
     serde_yaml::Value::Mapping(options)
 }
 
-fn add_service_hosts_and_secret_mounts(
+fn add_service_hosts_and_mounts(
     yaml: &mut serde_yaml::Value,
     config: &ComposeRewriteConfig<'_>,
 ) -> bool {
@@ -366,6 +370,7 @@ fn add_service_hosts_and_secret_mounts(
         {
             changed |= ensure_extra_hosts(service_definition, config);
             changed |= ensure_secret_mounts(service_definition, config.secret_container_paths);
+            changed |= ensure_shared_caddy_pki_mount(service_definition, config);
         }
     }
 
@@ -439,6 +444,92 @@ fn ensure_secret_mounts(
         sequence.push(serde_yaml::Value::String(mount));
     }
     true
+}
+
+fn ensure_shared_caddy_pki_mount(
+    service_definition: &mut YamlMapping,
+    config: &ComposeRewriteConfig<'_>,
+) -> bool {
+    let Some(container_path) = config.shared_caddy_pki_container_path else {
+        return false;
+    };
+    if !is_caddy_service(service_definition) {
+        return false;
+    }
+
+    ensure_bind_mount(
+        service_definition,
+        &format!("{container_path}:/data/caddy/pki"),
+        "/data/caddy/pki",
+    )
+}
+
+fn ensure_bind_mount(service_definition: &mut YamlMapping, mount: &str, target_path: &str) -> bool {
+    let volumes_key = serde_yaml::Value::String("volumes".into());
+    let volumes_seq = service_definition
+        .entry(volumes_key)
+        .or_insert_with(|| serde_yaml::Value::Sequence(vec![]));
+    let Some(sequence) = volumes_seq.as_sequence_mut() else {
+        return false;
+    };
+
+    if service_has_mount_target(sequence, target_path) {
+        return false;
+    }
+
+    sequence.push(serde_yaml::Value::String(mount.to_string()));
+    true
+}
+
+fn service_has_mount_target(sequence: &[serde_yaml::Value], target_path: &str) -> bool {
+    sequence
+        .iter()
+        .any(|volume| volume_mount_target(volume).is_some_and(|target| target == target_path))
+}
+
+fn is_caddy_service(service_definition: &YamlMapping) -> bool {
+    service_image_name(service_definition)
+        .is_some_and(|image| image_repo_basename(image) == "caddy")
+        || service_mounts_etc_caddy(service_definition)
+}
+
+fn service_image_name(service_definition: &YamlMapping) -> Option<&str> {
+    service_definition
+        .get(serde_yaml::Value::String("image".into()))
+        .and_then(serde_yaml::Value::as_str)
+}
+
+fn image_repo_basename(image: &str) -> &str {
+    let without_digest = image.split('@').next().unwrap_or(image);
+    let last_segment = without_digest.rsplit('/').next().unwrap_or(without_digest);
+    last_segment.split(':').next().unwrap_or(last_segment)
+}
+
+fn service_mounts_etc_caddy(service_definition: &YamlMapping) -> bool {
+    service_definition
+        .get(serde_yaml::Value::String("volumes".into()))
+        .and_then(serde_yaml::Value::as_sequence)
+        .is_some_and(|volumes| {
+            volumes.iter().any(|volume| {
+                volume_mount_target(volume).is_some_and(|target| {
+                    target == "/etc/caddy" || target == "/etc/caddy/Caddyfile"
+                })
+            })
+        })
+}
+
+fn volume_mount_target(volume: &serde_yaml::Value) -> Option<&str> {
+    match volume {
+        serde_yaml::Value::String(entry) => {
+            let parts: Vec<&str> = entry.splitn(3, ':').collect();
+            (parts.len() >= 2).then_some(parts[1])
+        }
+        serde_yaml::Value::Mapping(mapping) => mapping
+            .get(serde_yaml::Value::String("target".into()))
+            .or_else(|| mapping.get(serde_yaml::Value::String("destination".into())))
+            .and_then(serde_yaml::Value::as_str),
+        _ => None,
+    }
 }
 
 fn apply_hot_service_rslave_overrides(
@@ -552,11 +643,7 @@ fn rewrite_volume_with_rslave(vol: &mut serde_yaml::Value) {
 }
 
 fn output_dir(project: &str, instance_name: &str) -> PathBuf {
-    let home = dirs::home_dir().unwrap_or_default();
-    home.join(".coast")
-        .join("overrides")
-        .join(project)
-        .join(instance_name)
+    paths::override_dir(project, instance_name)
 }
 
 #[cfg(test)]
@@ -576,6 +663,7 @@ mod tests {
             per_instance_image_tags: &[],
             has_volume_mounts: false,
             secret_container_paths: &[],
+            shared_caddy_pki_container_path: None,
             project: "test-proj",
             instance_name: "test-inst",
             hot_services: &[],
@@ -864,6 +952,112 @@ services:
                 "service {svc_name} should have secret mount"
             );
         }
+    }
+
+    #[test]
+    fn test_caddy_image_gets_shared_pki_mount() {
+        let compose = r#"
+services:
+  proxy:
+    image: caddy:2
+"#;
+        let config = ComposeRewriteConfig {
+            shared_caddy_pki_container_path: Some(paths::SHARED_CADDY_PKI_CONTAINER_PATH),
+            ..base_config()
+        };
+        let result = rewrite_compose_yaml(compose, &config).unwrap();
+        let yaml = parse_output(&result);
+
+        let volumes = yaml
+            .get("services")
+            .and_then(|s| s.get("proxy"))
+            .and_then(|s| s.get("volumes"))
+            .and_then(|v| v.as_sequence())
+            .unwrap();
+        let volume_strs: Vec<&str> = volumes.iter().filter_map(|v| v.as_str()).collect();
+        assert!(volume_strs.contains(&"/coast-caddy-pki:/data/caddy/pki"));
+    }
+
+    #[test]
+    fn test_non_caddy_service_does_not_get_shared_pki_mount() {
+        let compose = r#"
+services:
+  web:
+    image: nginx:latest
+"#;
+        let config = ComposeRewriteConfig {
+            shared_caddy_pki_container_path: Some(paths::SHARED_CADDY_PKI_CONTAINER_PATH),
+            ..base_config()
+        };
+        let result = rewrite_compose_yaml(compose, &config).unwrap();
+        let yaml = parse_output(&result);
+
+        let volumes: Vec<&str> = yaml
+            .get("services")
+            .and_then(|s| s.get("web"))
+            .and_then(|s| s.get("volumes"))
+            .and_then(|v| v.as_sequence())
+            .map(|volumes| volumes.iter().filter_map(|v| v.as_str()).collect())
+            .unwrap_or_default();
+        assert!(!volumes.contains(&"/coast-caddy-pki:/data/caddy/pki"));
+    }
+
+    #[test]
+    fn test_etc_caddy_mount_marks_service_as_caddy_candidate() {
+        let compose = r#"
+services:
+  proxy:
+    image: custom-proxy:latest
+    volumes:
+      - ./docker/caddy/Caddyfile:/etc/caddy/Caddyfile
+"#;
+        let config = ComposeRewriteConfig {
+            shared_caddy_pki_container_path: Some(paths::SHARED_CADDY_PKI_CONTAINER_PATH),
+            ..base_config()
+        };
+        let result = rewrite_compose_yaml(compose, &config).unwrap();
+        let yaml = parse_output(&result);
+
+        let volumes = yaml
+            .get("services")
+            .and_then(|s| s.get("proxy"))
+            .and_then(|s| s.get("volumes"))
+            .and_then(|v| v.as_sequence())
+            .unwrap();
+        let volume_strs: Vec<&str> = volumes.iter().filter_map(|v| v.as_str()).collect();
+        assert!(volume_strs.contains(&"/coast-caddy-pki:/data/caddy/pki"));
+    }
+
+    #[test]
+    fn test_shared_pki_mount_preserves_existing_data_mount() {
+        let compose = r#"
+services:
+  proxy:
+    image: caddy:2
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+volumes:
+  caddy_data:
+  caddy_config:
+"#;
+        let config = ComposeRewriteConfig {
+            shared_caddy_pki_container_path: Some(paths::SHARED_CADDY_PKI_CONTAINER_PATH),
+            ..base_config()
+        };
+        let result = rewrite_compose_yaml(compose, &config).unwrap();
+        let yaml = parse_output(&result);
+
+        let volumes = yaml
+            .get("services")
+            .and_then(|s| s.get("proxy"))
+            .and_then(|s| s.get("volumes"))
+            .and_then(|v| v.as_sequence())
+            .unwrap();
+        let volume_strs: Vec<&str> = volumes.iter().filter_map(|v| v.as_str()).collect();
+        assert!(volume_strs.contains(&"caddy_data:/data"));
+        assert!(volume_strs.contains(&"caddy_config:/config"));
+        assert!(volume_strs.contains(&"/coast-caddy-pki:/data/caddy/pki"));
     }
 
     // --- rewrite_compose_yaml: edge cases ---

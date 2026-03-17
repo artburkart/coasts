@@ -37,6 +37,8 @@ Want a concrete example to explore? Check out the [`coasts-demo` repository](htt
 To contribute, read the [contributing guide](CONTRIBUTING.md) for PR guidelines.
 
 > Note: Coasts is currently macOS-first. Linux development works, but canonical ports below `1024` require host setup before `coast checkout` can bind them.
+>
+> For local HTTPS stacks that use Caddy, Coast now reuses one local Caddy root CA per Coast installation. Trust that root once and recreated workspaces under the same `COAST_HOME` keep using it. `coast` and `coast-dev` stay separate because they use different Coast homes.
 
 ### Prerequisites
 
@@ -57,6 +59,8 @@ Run the setup script once to build the web UI, compile the workspace, and symlin
 On first run it adds `~/.local/bin` to your PATH — restart your shell or `source ~/.zshrc` to pick it up.
 
 Dev mode uses `~/.coast-dev/` and port 31416, so it never conflicts with a global coast install on port 31415.
+
+That separation also applies to local HTTPS trust. `coast-dev` reuses a stable Caddy root under `~/.coast-dev/caddy/pki/...`, while the regular install uses `~/.coast/caddy/pki/...`.
 
 ### Day-to-day development workflow
 

@@ -9,6 +9,7 @@ mod finalize;
 mod host_builds;
 mod image_loading;
 mod mcp_setup;
+mod paths;
 mod provision;
 mod secrets;
 mod service_start;
@@ -31,16 +32,12 @@ fn emit(tx: &tokio::sync::mpsc::Sender<BuildProgressEvent>, event: BuildProgress
 ///
 /// For the default type (None), reads `latest`. For a named type, reads `latest-{type}`.
 pub fn resolve_latest_build_id(project: &str, coastfile_type: Option<&str>) -> Option<String> {
-    let home = dirs::home_dir()?;
+    let home = paths::active_coast_home();
     let latest_name = match coastfile_type {
         Some(t) => format!("latest-{t}"),
         None => "latest".to_string(),
     };
-    let latest_link = home
-        .join(".coast")
-        .join("images")
-        .join(project)
-        .join(latest_name);
+    let latest_link = home.join("images").join(project).join(latest_name);
     std::fs::read_link(&latest_link)
         .ok()
         .and_then(|target| target.file_name().map(|f| f.to_string_lossy().into_owned()))
@@ -91,8 +88,7 @@ fn detect_coastfile_info(
     bool,
     Vec<coast_core::types::BareServiceConfig>,
 ) {
-    let home = dirs::home_dir().unwrap_or_default();
-    let project_dir = home.join(".coast").join("images").join(project);
+    let project_dir = paths::project_images_dir(project);
     let coastfile_path = resolved_build_id
         .map(|bid| project_dir.join(bid).join("coastfile.toml"))
         .filter(|p| p.exists())

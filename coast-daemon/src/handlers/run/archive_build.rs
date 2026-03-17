@@ -8,7 +8,7 @@ use coast_core::protocol::BuildProgressEvent;
 use coast_docker::compose_build::ComposeBuildDirective;
 use coast_docker::runtime::Runtime;
 
-use super::emit;
+use super::{emit, paths};
 
 pub(super) struct ArchiveBuildRequest<'a> {
     pub container_id: &'a str,
@@ -286,9 +286,10 @@ async fn write_archive_compose_override(
     let override_data = ArchiveComposeOverrideData {
         volume_yaml: build_volume_override_yaml(request.coastfile_path, request.has_volume_mounts),
         service_images: build_service_image_overrides(per_instance_image_tags),
-        service_volumes: build_secret_volume_overrides(
+        service_volumes: build_service_volume_overrides(
             compose_content.as_deref(),
             request.secret_container_paths,
+            Some(paths::SHARED_CADDY_PKI_CONTAINER_PATH),
         ),
         service_extra_hosts: build_extra_host_overrides(compose_content.as_deref()),
     };
@@ -345,14 +346,11 @@ fn build_service_image_overrides(
         .collect()
 }
 
-fn build_secret_volume_overrides(
+fn build_service_volume_overrides(
     compose_content: Option<&str>,
     secret_container_paths: &[String],
+    shared_caddy_pki_container_path: Option<&str>,
 ) -> HashMap<String, Vec<String>> {
-    if secret_container_paths.is_empty() {
-        return HashMap::new();
-    }
-
     let Some(content) = compose_content else {
         return HashMap::new();
     };
@@ -370,12 +368,80 @@ fn build_secret_volume_overrides(
         .iter()
         .map(|container_path| format!("{container_path}:{container_path}:ro"))
         .collect();
+    let shared_caddy_mount =
+        shared_caddy_pki_container_path.map(|path| format!("{path}:/data/caddy/pki"));
 
     services
-        .keys()
-        .filter_map(|service_name| service_name.as_str().map(str::to_string))
-        .map(|service_name| (service_name, secret_mounts.clone()))
+        .iter()
+        .filter_map(|(service_name, service_definition)| {
+            let service_name = service_name.as_str()?.to_string();
+            let service_definition = service_definition.as_mapping()?;
+            let mut mounts = secret_mounts.clone();
+
+            if let Some(ref caddy_mount) = shared_caddy_mount {
+                let existing_pki_target = service_definition
+                    .get(serde_yaml::Value::String("volumes".into()))
+                    .and_then(serde_yaml::Value::as_sequence)
+                    .is_some_and(|volumes| {
+                        volumes.iter().any(|volume| {
+                            volume_mount_target(volume)
+                                .is_some_and(|target| target == "/data/caddy/pki")
+                        })
+                    });
+
+                if !existing_pki_target && is_caddy_service(service_definition) {
+                    mounts.push(caddy_mount.clone());
+                }
+            }
+
+            (!mounts.is_empty()).then_some((service_name, mounts))
+        })
         .collect()
+}
+
+fn is_caddy_service(service_definition: &serde_yaml::Mapping) -> bool {
+    service_image_name(service_definition)
+        .is_some_and(|image| image_repo_basename(image) == "caddy")
+        || service_mounts_etc_caddy(service_definition)
+}
+
+fn service_image_name(service_definition: &serde_yaml::Mapping) -> Option<&str> {
+    service_definition
+        .get(serde_yaml::Value::String("image".into()))
+        .and_then(serde_yaml::Value::as_str)
+}
+
+fn image_repo_basename(image: &str) -> &str {
+    let without_digest = image.split('@').next().unwrap_or(image);
+    let last_segment = without_digest.rsplit('/').next().unwrap_or(without_digest);
+    last_segment.split(':').next().unwrap_or(last_segment)
+}
+
+fn service_mounts_etc_caddy(service_definition: &serde_yaml::Mapping) -> bool {
+    service_definition
+        .get(serde_yaml::Value::String("volumes".into()))
+        .and_then(serde_yaml::Value::as_sequence)
+        .is_some_and(|volumes| {
+            volumes.iter().any(|volume| {
+                volume_mount_target(volume).is_some_and(|target| {
+                    target == "/etc/caddy" || target == "/etc/caddy/Caddyfile"
+                })
+            })
+        })
+}
+
+fn volume_mount_target(volume: &serde_yaml::Value) -> Option<&str> {
+    match volume {
+        serde_yaml::Value::String(entry) => {
+            let parts: Vec<&str> = entry.splitn(3, ':').collect();
+            (parts.len() >= 2).then_some(parts[1])
+        }
+        serde_yaml::Value::Mapping(mapping) => mapping
+            .get(serde_yaml::Value::String("target".into()))
+            .or_else(|| mapping.get(serde_yaml::Value::String("destination".into())))
+            .and_then(serde_yaml::Value::as_str),
+        _ => None,
+    }
 }
 
 fn build_extra_host_overrides(compose_content: Option<&str>) -> HashMap<String, Vec<String>> {
@@ -523,7 +589,7 @@ mod tests {
     }
 
     #[test]
-    fn test_build_secret_volume_overrides_applies_to_all_services() {
+    fn test_build_service_volume_overrides_applies_secret_mounts_to_all_services() {
         let compose = r#"
 services:
   web:
@@ -531,8 +597,11 @@ services:
   worker:
     image: jobs
 "#;
-        let overrides =
-            build_secret_volume_overrides(Some(compose), &["/run/secrets/api_key".to_string()]);
+        let overrides = build_service_volume_overrides(
+            Some(compose),
+            &["/run/secrets/api_key".to_string()],
+            None,
+        );
 
         assert_eq!(
             overrides.get("web"),
@@ -545,6 +614,25 @@ services:
             Some(&vec![
                 "/run/secrets/api_key:/run/secrets/api_key:ro".to_string()
             ])
+        );
+    }
+
+    #[test]
+    fn test_build_service_volume_overrides_adds_shared_caddy_mount() {
+        let compose = r#"
+services:
+  proxy:
+    image: caddy:2
+"#;
+        let overrides = build_service_volume_overrides(
+            Some(compose),
+            &[],
+            Some(paths::SHARED_CADDY_PKI_CONTAINER_PATH),
+        );
+
+        assert_eq!(
+            overrides.get("proxy"),
+            Some(&vec!["/coast-caddy-pki:/data/caddy/pki".to_string()])
         );
     }
 
