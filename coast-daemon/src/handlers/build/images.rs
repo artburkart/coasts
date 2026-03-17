@@ -167,21 +167,35 @@ async fn cache_referenced_images(
     };
 
     for image_name in image_refs {
-        info!(image = %image_name, "caching OCI image");
-        match pull_and_cache_image(docker, image_name, context.cache_dir).await {
+        let resolved_image_name = resolve_compose_image_ref(image_name, context.build_env);
+        if resolved_image_name.trim().is_empty() {
+            output.warnings.push(format!(
+                "Skipping image '{}' because interpolation resolved to an empty image name.",
+                image_name
+            ));
+            emit(
+                context.progress,
+                BuildProgressEvent::item("Pulling images", image_name, "warn")
+                    .with_verbose("image interpolation resolved to an empty string".to_string()),
+            );
+            continue;
+        }
+
+        info!(image = %resolved_image_name, original = %image_name, "caching OCI image");
+        match pull_and_cache_image(docker, &resolved_image_name, context.cache_dir).await {
             Ok(_) => {
                 output.images_cached += 1;
-                output.pulled_images.push(image_name.clone());
+                output.pulled_images.push(resolved_image_name.clone());
                 emit(
                     context.progress,
-                    BuildProgressEvent::item("Pulling images", image_name, "ok"),
+                    BuildProgressEvent::item("Pulling images", &resolved_image_name, "ok"),
                 );
             }
             Err(error) => {
                 let status = if context.refresh { "fail" } else { "warn" };
                 emit(
                     context.progress,
-                    BuildProgressEvent::item("Pulling images", image_name, status)
+                    BuildProgressEvent::item("Pulling images", &resolved_image_name, status)
                         .with_verbose(error.to_string()),
                 );
                 if context.refresh {
@@ -189,13 +203,120 @@ async fn cache_referenced_images(
                 }
                 output.warnings.push(format!(
                     "Failed to cache image '{}': {}. Build will continue.",
-                    image_name, error
+                    resolved_image_name, error
                 ));
             }
         }
     }
 
     Ok(())
+}
+
+fn resolve_compose_image_ref(
+    image_ref: &str,
+    env: &std::collections::HashMap<String, String>,
+) -> String {
+    let mut out = String::with_capacity(image_ref.len());
+    let chars: Vec<char> = image_ref.chars().collect();
+    let mut idx = 0;
+
+    while idx < chars.len() {
+        match chars[idx] {
+            '$' if idx + 1 < chars.len() && chars[idx + 1] == '$' => {
+                out.push('$');
+                idx += 2;
+            }
+            '$' if idx + 1 < chars.len() && chars[idx + 1] == '{' => {
+                let Some(end) = find_closing_brace(&chars, idx + 2) else {
+                    out.push('$');
+                    idx += 1;
+                    continue;
+                };
+                let expr: String = chars[idx + 2..end].iter().collect();
+                out.push_str(&resolve_braced_compose_var(&expr, env));
+                idx = end + 1;
+            }
+            '$' if idx + 1 < chars.len() && is_compose_var_start(chars[idx + 1]) => {
+                let start = idx + 1;
+                let mut end = start + 1;
+                while end < chars.len() && is_compose_var_continue(chars[end]) {
+                    end += 1;
+                }
+                let var_name: String = chars[start..end].iter().collect();
+                out.push_str(env.get(&var_name).map_or("", String::as_str));
+                idx = end;
+            }
+            ch => {
+                out.push(ch);
+                idx += 1;
+            }
+        }
+    }
+
+    out
+}
+
+fn find_closing_brace(chars: &[char], start: usize) -> Option<usize> {
+    let mut idx = start;
+    while idx < chars.len() {
+        if chars[idx] == '}' {
+            return Some(idx);
+        }
+        idx += 1;
+    }
+    None
+}
+
+fn resolve_braced_compose_var(
+    expr: &str,
+    env: &std::collections::HashMap<String, String>,
+) -> String {
+    for operator in [":-", "-", ":?", "?"] {
+        if let Some((var_name, remainder)) = expr.split_once(operator) {
+            let value = env.get(var_name).cloned().unwrap_or_default();
+            return match operator {
+                ":-" => {
+                    if value.is_empty() {
+                        resolve_compose_image_ref(remainder, env)
+                    } else {
+                        value
+                    }
+                }
+                "-" => {
+                    if env.contains_key(var_name) {
+                        value
+                    } else {
+                        resolve_compose_image_ref(remainder, env)
+                    }
+                }
+                ":?" => {
+                    if value.is_empty() {
+                        String::new()
+                    } else {
+                        value
+                    }
+                }
+                "?" => {
+                    if env.contains_key(var_name) {
+                        value
+                    } else {
+                        String::new()
+                    }
+                }
+                _ => unreachable!(),
+            };
+        }
+    }
+
+    env.get(expr).cloned().unwrap_or_default()
+}
+
+fn is_compose_var_start(ch: char) -> bool {
+    ch == '_' || ch.is_ascii_alphabetic()
+}
+
+fn is_compose_var_continue(ch: char) -> bool {
+    ch == '_' || ch.is_ascii_alphanumeric()
 }
 
 async fn cache_base_images(
@@ -264,5 +385,50 @@ async fn pull_base_images(
                 ));
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::resolve_compose_image_ref;
+
+    #[test]
+    fn resolves_dollar_brace_variables_in_image_refs() {
+        let env = std::collections::HashMap::from([("TAG".to_string(), "2026.03".to_string())]);
+        assert_eq!(
+            resolve_compose_image_ref("ghcr.io/acme/app:${TAG}", &env),
+            "ghcr.io/acme/app:2026.03"
+        );
+    }
+
+    #[test]
+    fn resolves_short_variables_in_image_refs() {
+        let env = std::collections::HashMap::from([("TAG".to_string(), "dev".to_string())]);
+        assert_eq!(
+            resolve_compose_image_ref("ghcr.io/acme/app:$TAG", &env),
+            "ghcr.io/acme/app:dev"
+        );
+    }
+
+    #[test]
+    fn resolves_default_values_in_image_refs() {
+        let env = std::collections::HashMap::new();
+        assert_eq!(
+            resolve_compose_image_ref("ghcr.io/acme/app:${TAG:-latest}", &env),
+            "ghcr.io/acme/app:latest"
+        );
+        assert_eq!(
+            resolve_compose_image_ref("ghcr.io/acme/app:${TAG-default}", &env),
+            "ghcr.io/acme/app:default"
+        );
+    }
+
+    #[test]
+    fn preserves_escaped_dollar_signs() {
+        let env = std::collections::HashMap::new();
+        assert_eq!(
+            resolve_compose_image_ref("ghcr.io/acme/app:$$TAG", &env),
+            "ghcr.io/acme/app:$TAG"
+        );
     }
 }
