@@ -558,7 +558,12 @@
   "docs.nav.coastfileAssign": "Assign",
   "docs.nav.coastfileInheritance": "Inheritance & Types",
   "docs.nav.coastfileAgentShell": "Agent Shell",
+  "docs.nav.coastfileWorktreeDir": "Worktree Directories",
   "docs.nav.coastfileMcp": "MCP Servers & Clients",
+  "docs.nav.harnesses": "Harnesses",
+  "docs.nav.harnessCodex": "Codex",
+  "docs.nav.harnessConductor": "Conductor",
+  "docs.nav.harnessT3Code": "T3 Code",
   "docs.nav.recipes": "Recipes",
   "docs.nav.recipesFullstackMonorepo": "Full-Stack Monorepo"
 }

@@ -507,7 +507,12 @@
   "docs.nav.coastfileAssign": "Atribuição",
   "docs.nav.coastfileInheritance": "Herança e Tipos",
   "docs.nav.coastfileAgentShell": "Shell de Agente",
+  "docs.nav.coastfileWorktreeDir": "Diretórios de Worktree",
   "docs.nav.coastfileMcp": "Servidores e Clientes MCP",
+  "docs.nav.harnesses": "Integrações",
+  "docs.nav.harnessCodex": "Codex",
+  "docs.nav.harnessConductor": "Conductor",
+  "docs.nav.harnessT3Code": "T3 Code",
   "docs.nav.recipes": "Receitas",
   "docs.nav.recipesFullstackMonorepo": "Monorepo Full-Stack"
 }

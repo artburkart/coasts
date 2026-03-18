@@ -19,16 +19,16 @@ fn main() {
     println!("cargo:rerun-if-changed=../docs");
     println!("cargo:rerun-if-changed=../search-indexes");
 
-    // Skip the npm build in CI or when explicitly opted out
+    // Skip the npm build in CI or when explicitly opted out.
+    // Create a stub dist/ so rust-embed compiles even without a real UI build.
     if std::env::var("COAST_SKIP_UI_BUILD").is_ok() {
         println!("cargo:warning=COAST_SKIP_UI_BUILD set, skipping UI build");
-        return;
-    }
-
-    let dist_index = guard_dir.join("dist").join("index.html");
-    if dist_index.exists() {
-        // Already built — don't rebuild unless sources changed (cargo handles
-        // this via rerun-if-changed directives above).
+        let dist_dir = guard_dir.join("dist");
+        if !dist_dir.join("index.html").exists() {
+            std::fs::create_dir_all(&dist_dir).expect("failed to create stub dist/");
+            std::fs::write(dist_dir.join("index.html"), "<!-- stub: UI not built -->")
+                .expect("failed to write stub index.html");
+        }
         return;
     }
 

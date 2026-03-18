@@ -1,5 +1,5 @@
 import { Link, useNavigate } from 'react-router';
-import { File, CaretRight, FolderOpen } from '@phosphor-icons/react';
+import { CaretRight } from '@phosphor-icons/react';
 import { useMemo, useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../api/endpoints';
@@ -65,8 +65,13 @@ const DOC_TITLE_KEYS: Record<string, string> = {
   'coastfiles/VOLUMES.md': 'docs.nav.coastfileVolumes',
   'coastfiles/ASSIGN.md': 'docs.nav.coastfileAssign',
   'coastfiles/INHERITANCE.md': 'docs.nav.coastfileInheritance',
+  'coastfiles/WORKTREE_DIR.md': 'docs.nav.coastfileWorktreeDir',
   'coastfiles/AGENT_SHELL.md': 'docs.nav.coastfileAgentShell',
   'coastfiles/MCP.md': 'docs.nav.coastfileMcp',
+  'harnesses/README.md': 'docs.nav.harnesses',
+  'harnesses/CODEX.md': 'docs.nav.harnessCodex',
+  'harnesses/CONDUCTOR.md': 'docs.nav.harnessConductor',
+  'harnesses/T3_CODE.md': 'docs.nav.harnessT3Code',
   'recipes/README.md': 'docs.nav.recipes',
   'recipes/FULLSTACK_MONOREPO.md': 'docs.nav.recipesFullstackMonorepo',
 };
@@ -211,10 +216,7 @@ function TreeItem({
               className={`transition-transform duration-150 ${isExpanded ? 'rotate-90' : ''}`}
             />
           </span>
-          <span className="flex items-center gap-2 py-1.5 pr-2 flex-1 min-w-0">
-            <FolderOpen size={16} className="flex-shrink-0 text-[var(--primary)]" />
-            <span className="truncate text-left">{displayName(node, t)}</span>
-          </span>
+          <span className="truncate text-left py-1.5 pr-2">{displayName(node, t)}</span>
         </button>
         {isExpanded && node.children != null && (
           <div className="ml-2.5 border-l border-[var(--border)]">
@@ -251,14 +253,16 @@ function TreeItem({
         });
       }}
       style={{ paddingLeft: `${depth * 0.75}rem` }}
-      className={`flex items-center gap-2 py-1.5 px-2 rounded-md text-sm transition-colors ${
+      className={`flex items-center gap-0.5 rounded-md text-sm transition-colors ${
         active
           ? 'text-main font-semibold bg-white/20 dark:bg-white/10'
           : 'text-muted-ui hover:text-main hover:bg-white/10 dark:hover:bg-white/5'
       }`}
     >
-      <File size={16} className="flex-shrink-0 text-subtle-ui" />
-      <span className="truncate">{displayName(node, t)}</span>
+      <span className="flex-shrink-0 p-1 invisible" aria-hidden="true">
+        <CaretRight size={12} />
+      </span>
+      <span className="truncate py-1.5 pr-2">{displayName(node, t)}</span>
     </Link>
   );
 }

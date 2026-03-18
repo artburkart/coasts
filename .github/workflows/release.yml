@@ -176,3 +176,14 @@ jobs:
             dist/coast-v*.tar.gz.sha256
           prerelease: ${{ contains(github.ref_name, '-rc') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-alpha') }}
 
+      - name: Notify Discord
+        if: ${{ !contains(github.ref_name, '-rc') && !contains(github.ref_name, '-beta') && !contains(github.ref_name, '-alpha') }}
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          curl -s -X POST "$DISCORD_WEBHOOK_URL" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"content\": \"**coasts ${VERSION}** has been released! 🚀\n\nSee what's new: https://github.com/coast-guard/coasts/releases/tag/${GITHUB_REF_NAME}\"
+            }"

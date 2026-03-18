@@ -522,7 +522,12 @@
   "docs.nav.coastfileAssign": "割り当て",
   "docs.nav.coastfileInheritance": "継承とタイプ",
   "docs.nav.coastfileAgentShell": "エージェントシェル",
+  "docs.nav.coastfileWorktreeDir": "ワークツリーディレクトリ",
   "docs.nav.coastfileMcp": "MCP サーバーとクライアント",
+  "docs.nav.harnesses": "ツール連携",
+  "docs.nav.harnessCodex": "Codex",
+  "docs.nav.harnessConductor": "Conductor",
+  "docs.nav.harnessT3Code": "T3 Code",
   "docs.nav.recipes": "レシピ",
   "docs.nav.recipesFullstackMonorepo": "フルスタック Monorepo"
 }

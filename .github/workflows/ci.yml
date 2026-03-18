@@ -30,9 +30,6 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
 
-      - name: Stub coast-guard dist (skipping UI build in CI)
-        run: mkdir -p coast-guard/dist && touch coast-guard/dist/index.html
-
       - name: Check formatting
         run: cargo fmt --all -- --check
 
