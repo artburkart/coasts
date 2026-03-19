@@ -458,6 +458,7 @@ pub fn remove_checkout_bridge(project: &str, instance: &str) -> Result<()> {
     )))
 }
 
+#[allow(clippy::cognitive_complexity)]
 pub fn cleanup_orphaned_checkout_bridges() {
     let Ok(output) = Command::new("docker")
         .args([
