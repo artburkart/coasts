@@ -47,6 +47,8 @@ pub enum Commands {
     Dns(commands::dns::DnsArgs),
     /// Manage Coast configuration.
     Config(commands::config::ConfigArgs),
+    /// Inspect and export the active install's root certificate.
+    Cert(commands::cert::CertArgs),
     /// Check for updates and apply them.
     Update(commands::update::UpdateArgs),
     /// List docs tree or print docs markdown content.
@@ -249,6 +251,7 @@ async fn dispatch(cli: Cli) -> Result<()> {
         Commands::Ui(args) => commands::ui::execute(&args).await,
         Commands::Dns(args) => commands::dns::execute(&args).await,
         Commands::Config(args) => commands::config::execute(&args).await,
+        Commands::Cert(args) => commands::cert::execute(&args).await,
         Commands::Update(args) => commands::update::execute(&args).await,
         Commands::Docs(args) => commands::docs::execute(&args).await,
         Commands::SearchDocs(args) => commands::search_docs::execute(&args).await,
@@ -479,6 +482,30 @@ mod tests {
         let cli = Cli::try_parse_from(["coast", "build"]).unwrap();
         assert!(matches!(cli.command, Commands::Build(_)));
         assert!(cli.project.is_none());
+    }
+
+    #[test]
+    fn test_cli_cert_info_subcommand() {
+        let cli = Cli::try_parse_from(["coast", "cert", "info"]).unwrap();
+        assert!(matches!(cli.command, Commands::Cert(_)));
+    }
+
+    #[test]
+    fn test_cli_cert_path_subcommand() {
+        let cli = Cli::try_parse_from(["coast", "cert", "path"]).unwrap();
+        assert!(matches!(cli.command, Commands::Cert(_)));
+    }
+
+    #[test]
+    fn test_cli_cert_fingerprint_subcommand() {
+        let cli = Cli::try_parse_from(["coast", "cert", "fingerprint"]).unwrap();
+        assert!(matches!(cli.command, Commands::Cert(_)));
+    }
+
+    #[test]
+    fn test_cli_cert_export_subcommand() {
+        let cli = Cli::try_parse_from(["coast", "cert", "export", "--to", "/tmp/foo.crt"]).unwrap();
+        assert!(matches!(cli.command, Commands::Cert(_)));
     }
 
     #[test]

@@ -7,6 +7,7 @@ pub mod archive;
 pub mod assign;
 pub mod build;
 pub mod builds;
+pub mod cert;
 pub mod checkout;
 pub mod config;
 pub mod daemon;

@@ -12,6 +12,7 @@ mod utils;
 
 use tracing::info;
 
+use coast_core::artifact::coast_home;
 use coast_core::coastfile::Coastfile;
 use coast_core::error::{CoastError, Result};
 use coast_core::protocol::{BuildProgressEvent, BuildRequest, BuildResponse};
@@ -28,7 +29,7 @@ fn emit(tx: &tokio::sync::mpsc::Sender<BuildProgressEvent>, event: BuildProgress
 /// Steps:
 /// 1. Parse and validate the Coastfile.
 /// 2. Extract secrets via configured extractors and store in keystore.
-/// 3. Create the artifact directory at `~/.coast/images/{project}/`.
+/// 3. Create the artifact directory at `$COAST_HOME/images/{project}/`.
 /// 4. Cache OCI images referenced in the compose file.
 /// 5. Build custom coast image (if configured).
 /// 6. Write the manifest file.
@@ -44,8 +45,11 @@ pub async fn handle(
     );
 
     let coastfile = Coastfile::from_file(&req.coastfile_path)?;
-    let home = dirs::home_dir().ok_or_else(|| {
-        CoastError::io_simple("cannot determine home directory. Set $HOME and try again.")
+    let home = coast_home()?;
+    std::fs::create_dir_all(&home).map_err(|error| CoastError::Io {
+        message: format!("failed to create Coast home directory: {error}"),
+        path: home.clone(),
+        source: Some(error),
     })?;
 
     let compose_analysis = plan::ComposeAnalysis::from_coastfile(&coastfile);
@@ -64,20 +68,13 @@ pub async fn handle(
     );
 
     let secret_output = secrets::extract_secrets(&coastfile, &home, &progress, &build_plan);
-    let artifact_output = artifact::create_artifact(
-        &req,
-        &coastfile,
-        &compose_analysis,
-        &home,
-        &progress,
-        &build_plan,
-    )?;
+    let artifact_output =
+        artifact::create_artifact(&req, &coastfile, &compose_analysis, &progress, &build_plan)?;
     let image_output = images::cache_images(
         &req,
         state,
         &coastfile,
         &compose_analysis,
-        &home,
         &progress,
         &build_plan,
     )
@@ -146,13 +143,24 @@ mod tests {
         tx
     }
 
+    static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
     struct HomeEnvGuard {
         _guard: MutexGuard<'static, ()>,
         previous_home: Option<OsString>,
+        previous_coast_home: Option<OsString>,
     }
 
     impl Drop for HomeEnvGuard {
         fn drop(&mut self) {
+            match &self.previous_coast_home {
+                Some(coast_home) => unsafe {
+                    std::env::set_var("COAST_HOME", coast_home);
+                },
+                None => unsafe {
+                    std::env::remove_var("COAST_HOME");
+                },
+            }
             match &self.previous_home {
                 Some(home) => unsafe {
                     std::env::set_var("HOME", home);
@@ -165,16 +173,35 @@ mod tests {
     }
 
     fn set_test_home(path: &Path) -> HomeEnvGuard {
-        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-        let guard = LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
-        std::fs::create_dir_all(path.join(".coast")).unwrap();
+        let guard = ENV_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
+        std::fs::create_dir_all(path).unwrap();
         let previous_home = std::env::var_os("HOME");
+        let previous_coast_home = std::env::var_os("COAST_HOME");
         unsafe {
             std::env::set_var("HOME", path);
+            std::env::remove_var("COAST_HOME");
         }
         HomeEnvGuard {
             _guard: guard,
             previous_home,
+            previous_coast_home,
+        }
+    }
+
+    fn set_test_home_and_coast_home(home: &Path, coast_home: &Path) -> HomeEnvGuard {
+        let guard = ENV_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
+        std::fs::create_dir_all(home).unwrap();
+        std::fs::create_dir_all(coast_home).unwrap();
+        let previous_home = std::env::var_os("HOME");
+        let previous_coast_home = std::env::var_os("COAST_HOME");
+        unsafe {
+            std::env::set_var("HOME", home);
+            std::env::set_var("COAST_HOME", coast_home);
+        }
+        HomeEnvGuard {
+            _guard: guard,
+            previous_home,
+            previous_coast_home,
         }
     }
 
@@ -240,6 +267,35 @@ compose = "./docker-compose.yml"
         assert!(resp.coast_image.is_none());
         assert!(resp.warnings.is_empty());
         assert!(resp.coastfile_type.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_build_uses_active_coast_home_for_artifacts() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = tempfile::tempdir().unwrap();
+        let coast_home = home.path().join(".coast-dev");
+        let _home_guard = set_test_home_and_coast_home(home.path(), &coast_home);
+        let coastfile_path = write_project_files(
+            dir.path(),
+            r#"
+[coast]
+name = "test-dev-home"
+compose = "./docker-compose.yml"
+"#,
+            "version: '3'\nservices: {}",
+        );
+
+        let state = test_state();
+        let req = BuildRequest {
+            coastfile_path,
+            refresh: false,
+        };
+        let resp = handle(req, &state, test_progress_sender()).await.unwrap();
+
+        assert!(resp.artifact_path.starts_with(coast_home.join("images")));
+        assert!(!resp
+            .artifact_path
+            .starts_with(home.path().join(".coast").join("images")));
     }
 
     #[tokio::test]

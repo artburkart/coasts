@@ -27,8 +27,8 @@ pub(super) fn extract_secrets(
     emit(progress, plan.started("Extracting secrets"));
 
     let mut output = SecretExtractionOutput::default();
-    let keystore_db_path = home.join(".coast").join("keystore.db");
-    let keystore_key_path = home.join(".coast").join("keystore.key");
+    let keystore_db_path = home.join("keystore.db");
+    let keystore_key_path = home.join("keystore.key");
 
     match coast_secrets::keystore::Keystore::open(&keystore_db_path, &keystore_key_path) {
         Ok(keystore) => {

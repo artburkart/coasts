@@ -38,6 +38,26 @@ Coast reports this explicitly when the host denies the bind.
 
 On WSL, Coast uses Docker-published checkout bridges so Windows browsers and tools can reach checked-out canonical ports through `127.0.0.1`, similar to Docker Desktop workflows like Sail.
 
+For local HTTPS projects that use Caddy, Coast reuses one Caddy local CA per Coast installation. After you trust that root once, recreated workspaces under the same install keep using it.
+
+The root certificate lives at:
+
+- `~/.coast/caddy/pki/authorities/local/root.crt` for the regular install
+- `~/.coast-dev/caddy/pki/authorities/local/root.crt` for `coast-dev`
+
+Those are intentionally separate, so trusting `coast-dev` does not also trust a regular `coast` install, and vice versa.
+
+To inspect or export the active install's root certificate:
+
+```bash
+coast cert info
+coast cert path
+coast cert fingerprint
+coast cert export --to ~/Downloads/coast-root.crt
+```
+
+Coast leaves trust installation up to you. Export the cert, then import it into your OS or browser trust store as needed.
+
 ## Do You Need to Check Out?
 
 Not necessarily. Every running Coast always has its own dynamic ports, and you can access any Coast through those ports at any time without checking anything out.

@@ -11,6 +11,7 @@ use crate::handlers::shared_service_routing::{
 };
 use crate::server::AppState;
 
+use super::paths;
 use super::service_start::{start_and_wait_for_services, StartServicesRequest};
 use super::validate::ValidatedRun;
 use super::{
@@ -105,6 +106,7 @@ pub(super) async fn provision_instance(
             &per_instance_image_tags,
             has_volume_mounts,
             &secret_container_paths,
+            Some(paths::SHARED_CADDY_PKI_CONTAINER_PATH),
             &req.project,
             &req.name,
         );
@@ -180,6 +182,8 @@ pub(super) async fn provision_instance(
     )
     .await?;
 
+    normalize_shared_caddy_pki_permissions(docker, &container_id).await;
+
     Ok(ProvisionResult {
         container_id,
         pre_allocated_ports: resources.pre_allocated_ports,
@@ -191,8 +195,7 @@ pub(super) async fn provision_instance(
 // ---------------------------------------------------------------------------
 
 fn resolve_code_path(project: &str, build_id: Option<&str>) -> std::path::PathBuf {
-    let home = dirs::home_dir().unwrap_or_default();
-    let project_dir = home.join(".coast").join("images").join(project);
+    let project_dir = paths::project_images_dir(project);
     let manifest_path = build_id
         .map(|bid| project_dir.join(bid).join("manifest.json"))
         .filter(|p| p.exists())
@@ -213,8 +216,7 @@ fn resolve_code_path(project: &str, build_id: Option<&str>) -> std::path::PathBu
 }
 
 fn resolve_artifact_dir(project: &str, build_id: Option<&str>) -> std::path::PathBuf {
-    let home = dirs::home_dir().unwrap_or_default();
-    let project_images_dir = home.join(".coast").join("images").join(project);
+    let project_images_dir = paths::project_images_dir(project);
     if let Some(bid) = build_id {
         let resolved = project_images_dir.join(bid);
         if resolved.exists() {
@@ -383,6 +385,7 @@ fn rewrite_compose(
     per_instance_image_tags: &[(String, String)],
     has_volume_mounts: bool,
     secret_container_paths: &[String],
+    shared_caddy_pki_container_path: Option<&str>,
     project: &str,
     instance_name: &str,
 ) {
@@ -417,6 +420,7 @@ fn rewrite_compose(
             per_instance_image_tags,
             has_volume_mounts,
             secret_container_paths,
+            shared_caddy_pki_container_path,
             project,
             instance_name,
             hot_services: &hot_svcs,
@@ -435,8 +439,7 @@ async fn create_container(
     pre_allocated_ports: &[(String, u16, u16)],
     progress: &tokio::sync::mpsc::Sender<BuildProgressEvent>,
 ) -> Result<String> {
-    let home = dirs::home_dir().unwrap_or_default();
-    let image_cache_dir = home.join(".coast").join("image-cache");
+    let image_cache_dir = paths::image_cache_dir();
     let image_cache_path = if image_cache_dir.exists() {
         Some(image_cache_dir.as_path())
     } else {
@@ -452,17 +455,20 @@ async fn create_container(
 
     let coast_image = read_coast_image(&artifact_dir_path);
 
-    let override_dir_path = home
-        .join(".coast")
-        .join("overrides")
-        .join(&req.project)
-        .join(&req.name);
+    let override_dir_path = paths::override_dir(&req.project, &req.name);
     std::fs::create_dir_all(&override_dir_path).map_err(|error| CoastError::Io {
         message: format!("failed to create override directory: {error}"),
         path: override_dir_path.clone(),
         source: Some(error),
     })?;
     let override_dir_opt = Some(override_dir_path.as_path());
+
+    let shared_caddy_pki_host_dir = paths::shared_caddy_pki_host_dir();
+    std::fs::create_dir_all(&shared_caddy_pki_host_dir).map_err(|error| CoastError::Io {
+        message: format!("failed to create shared Caddy PKI directory: {error}"),
+        path: shared_caddy_pki_host_dir.clone(),
+        source: Some(error),
+    })?;
 
     let dind_extra_hosts = vec!["host.docker.internal:host-gateway".to_string()];
 
@@ -483,15 +489,11 @@ async fn create_container(
         override_dir_opt,
         dind_extra_hosts,
     );
+    append_shared_caddy_pki_bind_mount(&mut config, &shared_caddy_pki_host_dir);
 
-    if let Ok(cf) = coast_core::coastfile::Coastfile::from_file(
-        &home
-            .join(".coast")
-            .join("images")
-            .join(&req.project)
-            .join("latest")
-            .join("coastfile.toml"),
-    ) {
+    if let Ok(cf) =
+        coast_core::coastfile::Coastfile::from_file(&artifact_dir_path.join("coastfile.toml"))
+    {
         for (idx, resolved) in cf.external_worktree_dirs() {
             config.bind_mounts.push(coast_docker::runtime::BindMount {
                 host_path: resolved,
@@ -532,6 +534,66 @@ async fn create_container(
         BuildProgressEvent::done("Creating container", "ok"),
     );
     Ok(container_id)
+}
+
+fn append_shared_caddy_pki_bind_mount(
+    config: &mut coast_docker::runtime::ContainerConfig,
+    shared_caddy_pki_host_dir: &std::path::Path,
+) {
+    config.bind_mounts.push(coast_docker::runtime::BindMount {
+        host_path: shared_caddy_pki_host_dir.to_path_buf(),
+        container_path: paths::SHARED_CADDY_PKI_CONTAINER_PATH.to_string(),
+        read_only: false,
+        propagation: None,
+    });
+}
+
+async fn normalize_shared_caddy_pki_permissions(docker: &bollard::Docker, container_id: &str) {
+    let runtime = coast_docker::dind::DindRuntime::with_client(docker.clone());
+    let command = shared_caddy_pki_permission_fixup_command();
+    let command_refs: Vec<&str> = command.iter().map(std::string::String::as_str).collect();
+
+    match runtime.exec_in_coast(container_id, &command_refs).await {
+        Ok(result) if result.success() => {
+            debug!(container_id, "normalized shared Caddy PKI permissions");
+        }
+        Ok(result) => {
+            warn!(
+                container_id,
+                exit_code = result.exit_code,
+                stderr = %result.stderr,
+                "failed to normalize shared Caddy PKI permissions"
+            );
+        }
+        Err(error) => {
+            warn!(
+                container_id,
+                error = %error,
+                "failed to exec shared Caddy PKI permission fixup"
+            );
+        }
+    }
+}
+
+fn shared_caddy_pki_permission_fixup_command() -> Vec<String> {
+    let base = paths::SHARED_CADDY_PKI_CONTAINER_PATH;
+    let script = format!(
+        "set -eu; \
+         base='{base}'; \
+         if [ ! -d \"$base\" ]; then exit 0; fi; \
+         chmod 755 \"$base\" 2>/dev/null || true; \
+         for dir in \"$base/authorities\" \"$base/authorities/local\"; do \
+             [ -d \"$dir\" ] && chmod 755 \"$dir\" 2>/dev/null || true; \
+         done; \
+         for cert in \"$base/authorities/local/root.crt\" \"$base/authorities/local/intermediate.crt\"; do \
+             [ -f \"$cert\" ] && chmod 644 \"$cert\" 2>/dev/null || true; \
+         done; \
+         for key in \"$base/authorities/local/root.key\" \"$base/authorities/local/intermediate.key\"; do \
+             [ -f \"$key\" ] && chmod 600 \"$key\" 2>/dev/null || true; \
+         done"
+    );
+
+    vec!["sh".into(), "-lc".into(), script]
 }
 
 fn read_coast_image(artifact_dir: &std::path::Path) -> Option<String> {
@@ -577,8 +639,7 @@ async fn load_cached_images(
         BuildProgressEvent::started("Loading cached images", loading_step, validated.total_steps),
     );
 
-    let home = dirs::home_dir().unwrap_or_default();
-    let cache_dir = home.join(".coast").join("image-cache");
+    let cache_dir = paths::image_cache_dir();
     if cache_dir.exists() {
         let tarball_names = image_loading::collect_project_tarballs(&cache_dir, project);
         if !tarball_names.is_empty() {
@@ -818,6 +879,37 @@ mod tests {
             result.is_none(),
             "should return None when coast_image field is missing"
         );
+    }
+
+    #[test]
+    fn test_append_shared_caddy_pki_bind_mount_adds_outer_runtime_mount() {
+        let mut config =
+            coast_docker::runtime::ContainerConfig::new("proj", "dev-1", "docker:dind");
+        let host_dir = std::path::Path::new("/tmp/coast-home/caddy/pki");
+
+        append_shared_caddy_pki_bind_mount(&mut config, host_dir);
+
+        assert!(config.bind_mounts.iter().any(|mount| {
+            mount.host_path == host_dir
+                && mount.container_path == paths::SHARED_CADDY_PKI_CONTAINER_PATH
+                && !mount.read_only
+        }));
+    }
+
+    #[test]
+    fn test_shared_caddy_pki_permission_fixup_command_exposes_public_cert_only() {
+        let command = shared_caddy_pki_permission_fixup_command();
+        assert_eq!(command[0], "sh");
+        assert_eq!(command[1], "-lc");
+        let script = &command[2];
+
+        assert!(script.contains("base='/coast-caddy-pki'"));
+        assert!(script.contains("\"$base/authorities/local/root.crt\""));
+        assert!(script.contains("\"$base/authorities/local/intermediate.crt\""));
+        assert!(script.contains("chmod 644"));
+        assert!(script.contains("\"$base/authorities/local/root.key\""));
+        assert!(script.contains("\"$base/authorities/local/intermediate.key\""));
+        assert!(script.contains("chmod 600"));
     }
 
     #[tokio::test]

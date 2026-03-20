@@ -2,6 +2,7 @@ use std::path::Path;
 
 use tracing::info;
 
+use coast_core::artifact::image_cache_dir;
 use coast_core::coastfile::Coastfile;
 use coast_core::error::{CoastError, Result};
 use coast_core::protocol::{BuildProgressEvent, BuildRequest};
@@ -37,11 +38,10 @@ pub(super) async fn cache_images(
     state: &AppState,
     _coastfile: &Coastfile,
     compose_analysis: &ComposeAnalysis,
-    home: &Path,
     progress: &tokio::sync::mpsc::Sender<BuildProgressEvent>,
     plan: &BuildPlan,
 ) -> Result<ImageBuildOutput> {
-    let cache_dir = home.join(".coast").join("image-cache");
+    let cache_dir = image_cache_dir()?;
     std::fs::create_dir_all(&cache_dir).map_err(|error| CoastError::Io {
         message: format!("failed to create image cache directory: {error}"),
         path: cache_dir.clone(),

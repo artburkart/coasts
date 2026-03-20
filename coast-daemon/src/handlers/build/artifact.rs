@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 
 use tracing::info;
 
+use coast_core::artifact::artifact_dir;
 use coast_core::coastfile::Coastfile;
 use coast_core::error::{CoastError, Result};
 use coast_core::protocol::{BuildProgressEvent, BuildRequest};
@@ -23,7 +24,6 @@ pub(super) fn create_artifact(
     req: &BuildRequest,
     coastfile: &Coastfile,
     compose_analysis: &ComposeAnalysis,
-    home: &Path,
     progress: &tokio::sync::mpsc::Sender<BuildProgressEvent>,
     plan: &BuildPlan,
 ) -> Result<ArtifactOutput> {
@@ -38,7 +38,7 @@ pub(super) fn create_artifact(
         build_timestamp.format("%Y%m%d%H%M%S")
     );
 
-    let project_dir = home.join(".coast").join("images").join(&coastfile.name);
+    let project_dir = artifact_dir(&coastfile.name)?;
     let artifact_path = project_dir.join(&build_id);
     std::fs::create_dir_all(&artifact_path).map_err(|error| CoastError::Io {
         message: format!("failed to create artifact directory: {error}"),
