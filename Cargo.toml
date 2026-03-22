@@ -35,7 +35,7 @@ bollard = "0.18"
 rusqlite = { version = "0.32", features = ["bundled"] }
 
 # Git
-git2 = "0.19"
+git2 = "0.20"
 
 # Crypto
 orion = "0.17"
