@@ -66,15 +66,15 @@ async fn handle_set(
 
             match coast_secrets::keystore::Keystore::open(&keystore_db_path, &keystore_key_path) {
                 Ok(keystore) => {
-                    keystore.store_secret(
-                        &format!("{project}/{instance}"),
-                        &name,
-                        value.as_bytes(),
-                        "env",
-                        &name,
-                        "manual",
-                        None,
-                    )?;
+                    keystore.store_secret(&coast_secrets::keystore::StoreSecretParams {
+                        coast_image: &format!("{project}/{instance}"),
+                        secret_name: &name,
+                        value: value.as_bytes(),
+                        inject_type: "env",
+                        inject_target: &name,
+                        extractor: "manual",
+                        ttl_seconds: None,
+                    })?;
                     info!(
                         instance = %instance,
                         secret_name = %name,
