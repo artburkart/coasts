@@ -32,6 +32,43 @@ pub struct StoredSecret {
     pub ttl_seconds: Option<i64>,
 }
 
+/// Parameters for storing a secret in the keystore.
+#[derive(Debug, Clone)]
+pub struct StoreSecretParams<'a> {
+    /// Coast image name this secret belongs to.
+    pub coast_image: &'a str,
+    /// Secret name.
+    pub secret_name: &'a str,
+    /// Raw secret value.
+    pub value: &'a [u8],
+    /// How to inject: "env" or "file".
+    pub inject_type: &'a str,
+    /// Injection target (var name or file path).
+    pub inject_target: &'a str,
+    /// Which extractor was used.
+    pub extractor: &'a str,
+    /// Optional TTL in seconds.
+    pub ttl_seconds: Option<i64>,
+}
+
+impl<'a> StoreSecretParams<'a> {
+    /// Create params with required fields; optional fields get sensible defaults.
+    ///
+    /// Defaults: `inject_type = "env"`, `inject_target = secret_name`,
+    /// `extractor = "unknown"`, `ttl_seconds = None`.
+    pub fn new(coast_image: &'a str, secret_name: &'a str, value: &'a [u8]) -> Self {
+        Self {
+            coast_image,
+            secret_name,
+            value,
+            inject_type: "env",
+            inject_target: secret_name,
+            extractor: "unknown",
+            ttl_seconds: None,
+        }
+    }
+}
+
 /// The encrypted keystore backed by SQLite.
 pub struct Keystore {
     conn: Connection,
@@ -161,18 +198,14 @@ impl Keystore {
     /// Store a secret in the keystore.
     ///
     /// If a secret with the same image and name already exists, it is replaced.
-    #[allow(clippy::too_many_arguments)]
-    pub fn store_secret(
-        &self,
-        coast_image: &str,
-        secret_name: &str,
-        value: &[u8],
-        inject_type: &str,
-        inject_target: &str,
-        extractor: &str,
-        ttl_seconds: Option<i64>,
-    ) -> Result<()> {
-        let encrypted = self.encrypt(value)?;
+    pub fn store_secret(&self, params: &StoreSecretParams) -> Result<()> {
+        let coast_image = params.coast_image;
+        let secret_name = params.secret_name;
+        let inject_type = params.inject_type;
+        let inject_target = params.inject_target;
+        let extractor = params.extractor;
+        let ttl_seconds = params.ttl_seconds;
+        let encrypted = self.encrypt(params.value)?;
         let now = Utc::now().to_rfc3339();
 
         self.conn
@@ -377,16 +410,12 @@ mod tests {
     fn test_store_and_retrieve() {
         let ks = Keystore::open_in_memory().unwrap();
 
-        ks.store_secret(
-            "my-app",
-            "api_key",
-            b"secret123",
-            "env",
-            "API_KEY",
-            "file",
-            None,
-        )
-        .unwrap();
+        let params = StoreSecretParams {
+            inject_target: "API_KEY",
+            extractor: "file",
+            ..StoreSecretParams::new("my-app", "api_key", b"secret123")
+        };
+        ks.store_secret(&params).unwrap();
 
         let secret = ks.get_secret("my-app", "api_key").unwrap().unwrap();
         assert_eq!(secret.coast_image, "my-app");
@@ -403,8 +432,12 @@ mod tests {
         let ks = Keystore::open_in_memory().unwrap();
 
         let plaintext = b"this is a secret value with special chars: \x00\x01\xff";
-        ks.store_secret("img", "sec", plaintext, "env", "VAR", "command", None)
-            .unwrap();
+        let params = StoreSecretParams {
+            inject_target: "VAR",
+            extractor: "command",
+            ..StoreSecretParams::new("img", "sec", plaintext)
+        };
+        ks.store_secret(&params).unwrap();
 
         let secret = ks.get_secret("img", "sec").unwrap().unwrap();
         assert_eq!(secret.value, plaintext);
@@ -421,10 +454,19 @@ mod tests {
     fn test_replace_secret() {
         let ks = Keystore::open_in_memory().unwrap();
 
-        ks.store_secret("img", "key", b"old", "env", "VAR", "file", None)
-            .unwrap();
-        ks.store_secret("img", "key", b"new", "env", "VAR", "file", None)
-            .unwrap();
+        let params_old = StoreSecretParams {
+            inject_target: "VAR",
+            extractor: "file",
+            ..StoreSecretParams::new("img", "key", b"old")
+        };
+        ks.store_secret(&params_old).unwrap();
+
+        let params_new = StoreSecretParams {
+            inject_target: "VAR",
+            extractor: "file",
+            ..StoreSecretParams::new("img", "key", b"new")
+        };
+        ks.store_secret(&params_new).unwrap();
 
         let secret = ks.get_secret("img", "key").unwrap().unwrap();
         assert_eq!(secret.value, b"new");
@@ -434,12 +476,25 @@ mod tests {
     fn test_get_all_secrets() {
         let ks = Keystore::open_in_memory().unwrap();
 
-        ks.store_secret("img", "a", b"1", "env", "A", "file", None)
-            .unwrap();
-        ks.store_secret("img", "b", b"2", "file", "/b", "env", None)
-            .unwrap();
-        ks.store_secret("other", "c", b"3", "env", "C", "file", None)
-            .unwrap();
+        ks.store_secret(&StoreSecretParams {
+            inject_target: "A",
+            extractor: "file",
+            ..StoreSecretParams::new("img", "a", b"1")
+        })
+        .unwrap();
+        ks.store_secret(&StoreSecretParams {
+            inject_type: "file",
+            inject_target: "/b",
+            extractor: "env",
+            ..StoreSecretParams::new("img", "b", b"2")
+        })
+        .unwrap();
+        ks.store_secret(&StoreSecretParams {
+            inject_target: "C",
+            extractor: "file",
+            ..StoreSecretParams::new("other", "c", b"3")
+        })
+        .unwrap();
 
         let secrets = ks.get_all_secrets("img").unwrap();
         assert_eq!(secrets.len(), 2);
@@ -452,12 +507,24 @@ mod tests {
     fn test_delete_secrets_for_image() {
         let ks = Keystore::open_in_memory().unwrap();
 
-        ks.store_secret("img", "a", b"1", "env", "A", "file", None)
-            .unwrap();
-        ks.store_secret("img", "b", b"2", "env", "B", "file", None)
-            .unwrap();
-        ks.store_secret("other", "c", b"3", "env", "C", "file", None)
-            .unwrap();
+        ks.store_secret(&StoreSecretParams {
+            inject_target: "A",
+            extractor: "file",
+            ..StoreSecretParams::new("img", "a", b"1")
+        })
+        .unwrap();
+        ks.store_secret(&StoreSecretParams {
+            inject_target: "B",
+            extractor: "file",
+            ..StoreSecretParams::new("img", "b", b"2")
+        })
+        .unwrap();
+        ks.store_secret(&StoreSecretParams {
+            inject_target: "C",
+            extractor: "file",
+            ..StoreSecretParams::new("other", "c", b"3")
+        })
+        .unwrap();
 
         let count = ks.delete_secrets_for_image("img").unwrap();
         assert_eq!(count, 2);
@@ -481,16 +548,30 @@ mod tests {
         let ks = Keystore::open_in_memory().unwrap();
 
         // Store a secret with a TTL of 1 second
-        ks.store_secret("img", "short", b"val", "env", "V", "cmd", Some(1))
-            .unwrap();
+        ks.store_secret(&StoreSecretParams {
+            inject_target: "V",
+            extractor: "cmd",
+            ttl_seconds: Some(1),
+            ..StoreSecretParams::new("img", "short", b"val")
+        })
+        .unwrap();
 
         // Store a secret with no TTL
-        ks.store_secret("img", "forever", b"val", "env", "V", "cmd", None)
-            .unwrap();
+        ks.store_secret(&StoreSecretParams {
+            inject_target: "V",
+            extractor: "cmd",
+            ..StoreSecretParams::new("img", "forever", b"val")
+        })
+        .unwrap();
 
         // Store a secret with a long TTL
-        ks.store_secret("img", "long", b"val", "env", "V", "cmd", Some(999999))
-            .unwrap();
+        ks.store_secret(&StoreSecretParams {
+            inject_target: "V",
+            extractor: "cmd",
+            ttl_seconds: Some(999999),
+            ..StoreSecretParams::new("img", "long", b"val")
+        })
+        .unwrap();
 
         // Wait for the short TTL to expire
         std::thread::sleep(std::time::Duration::from_secs(2));
@@ -504,10 +585,18 @@ mod tests {
     fn test_per_image_scoping() {
         let ks = Keystore::open_in_memory().unwrap();
 
-        ks.store_secret("app1", "key", b"val1", "env", "K", "file", None)
-            .unwrap();
-        ks.store_secret("app2", "key", b"val2", "env", "K", "file", None)
-            .unwrap();
+        ks.store_secret(&StoreSecretParams {
+            inject_target: "K",
+            extractor: "file",
+            ..StoreSecretParams::new("app1", "key", b"val1")
+        })
+        .unwrap();
+        ks.store_secret(&StoreSecretParams {
+            inject_target: "K",
+            extractor: "file",
+            ..StoreSecretParams::new("app2", "key", b"val2")
+        })
+        .unwrap();
 
         let s1 = ks.get_secret("app1", "key").unwrap().unwrap();
         let s2 = ks.get_secret("app2", "key").unwrap().unwrap();
@@ -520,8 +609,13 @@ mod tests {
         let ks = Keystore::open_in_memory().unwrap();
 
         let binary_data: Vec<u8> = (0..=255).collect();
-        ks.store_secret("img", "bin", &binary_data, "file", "/secret", "file", None)
-            .unwrap();
+        ks.store_secret(&StoreSecretParams {
+            inject_type: "file",
+            inject_target: "/secret",
+            extractor: "file",
+            ..StoreSecretParams::new("img", "bin", &binary_data)
+        })
+        .unwrap();
 
         let secret = ks.get_secret("img", "bin").unwrap().unwrap();
         assert_eq!(secret.value, binary_data);
@@ -554,8 +648,12 @@ mod tests {
         // Store a secret
         {
             let ks = Keystore::open(&db_path, &key_path).unwrap();
-            ks.store_secret("img", "key", b"secret", "env", "V", "file", None)
-                .unwrap();
+            ks.store_secret(&StoreSecretParams {
+                inject_target: "V",
+                extractor: "file",
+                ..StoreSecretParams::new("img", "key", b"secret")
+            })
+            .unwrap();
         }
 
         // Reopen and retrieve
@@ -570,10 +668,40 @@ mod tests {
     fn test_with_ttl_seconds() {
         let ks = Keystore::open_in_memory().unwrap();
 
-        ks.store_secret("img", "key", b"val", "env", "V", "cmd", Some(3600))
-            .unwrap();
+        ks.store_secret(&StoreSecretParams {
+            inject_target: "V",
+            extractor: "cmd",
+            ttl_seconds: Some(3600),
+            ..StoreSecretParams::new("img", "key", b"val")
+        })
+        .unwrap();
 
         let secret = ks.get_secret("img", "key").unwrap().unwrap();
         assert_eq!(secret.ttl_seconds, Some(3600));
+    }
+
+    #[test]
+    fn test_all_fields_populated() {
+        let ks = Keystore::open_in_memory().unwrap();
+
+        let params = StoreSecretParams {
+            coast_image: "my-service",
+            secret_name: "db_password",
+            value: b"s3cret!",
+            inject_type: "file",
+            inject_target: "/run/secrets/db_password",
+            extractor: "command",
+            ttl_seconds: Some(7200),
+        };
+        ks.store_secret(&params).unwrap();
+
+        let secret = ks.get_secret("my-service", "db_password").unwrap().unwrap();
+        assert_eq!(secret.coast_image, "my-service");
+        assert_eq!(secret.secret_name, "db_password");
+        assert_eq!(secret.value, b"s3cret!");
+        assert_eq!(secret.inject_type, "file");
+        assert_eq!(secret.inject_target, "/run/secrets/db_password");
+        assert_eq!(secret.extractor, "command");
+        assert_eq!(secret.ttl_seconds, Some(7200));
     }
 }

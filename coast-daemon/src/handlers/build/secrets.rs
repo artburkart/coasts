@@ -66,15 +66,17 @@ pub(super) fn extract_secrets(
                         };
                         let ttl_seconds =
                             secret_config.ttl.as_deref().and_then(parse_ttl_to_seconds);
-                        if let Err(error) = keystore.store_secret(
-                            &coastfile.name,
-                            &secret_config.name,
-                            &value_bytes,
-                            inject_type_str,
-                            inject_target_str,
-                            &secret_config.extractor,
-                            ttl_seconds,
-                        ) {
+                        if let Err(error) =
+                            keystore.store_secret(&coast_secrets::keystore::StoreSecretParams {
+                                coast_image: &coastfile.name,
+                                secret_name: &secret_config.name,
+                                value: &value_bytes,
+                                inject_type: inject_type_str,
+                                inject_target: inject_target_str,
+                                extractor: &secret_config.extractor,
+                                ttl_seconds,
+                            })
+                        {
                             emit(
                                 progress,
                                 BuildProgressEvent::item(

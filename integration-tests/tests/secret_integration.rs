@@ -9,7 +9,7 @@ use std::path::Path;
 
 use coast_secrets::extractor::{ExtractorRegistry, SecretValue};
 use coast_secrets::inject::{self, FileMount, ResolvedSecret};
-use coast_secrets::keystore::Keystore;
+use coast_secrets::keystore::{Keystore, StoreSecretParams};
 
 // ---------------------------------------------------------------------------
 // ExtractorRegistry with built-in extractors
@@ -184,26 +184,19 @@ fn test_keystore_create_store_retrieve_delete() {
     let ks = Keystore::open(&db_path, &key_path).unwrap();
 
     // Store secrets
-    ks.store_secret(
-        "my-app",
-        "api_key",
-        b"secret-api-key-123",
-        "env",
-        "API_KEY",
-        "env",
-        None,
-    )
+    ks.store_secret(&StoreSecretParams {
+        inject_target: "API_KEY",
+        extractor: "env",
+        ..StoreSecretParams::new("my-app", "api_key", b"secret-api-key-123")
+    })
     .unwrap();
 
-    ks.store_secret(
-        "my-app",
-        "gcp_creds",
-        b"{\"type\": \"service_account\"}",
-        "file",
-        "/run/secrets/gcp.json",
-        "file",
-        None,
-    )
+    ks.store_secret(&StoreSecretParams {
+        inject_type: "file",
+        inject_target: "/run/secrets/gcp.json",
+        extractor: "file",
+        ..StoreSecretParams::new("my-app", "gcp_creds", b"{\"type\": \"service_account\"}")
+    })
     .unwrap();
 
     // Retrieve single
@@ -242,15 +235,12 @@ fn test_keystore_encryption_roundtrip() {
 
     // Store binary data with all byte values
     let binary_data: Vec<u8> = (0..=255).collect();
-    ks.store_secret(
-        "img",
-        "binary_secret",
-        &binary_data,
-        "file",
-        "/secret",
-        "file",
-        None,
-    )
+    ks.store_secret(&StoreSecretParams {
+        inject_type: "file",
+        inject_target: "/secret",
+        extractor: "file",
+        ..StoreSecretParams::new("img", "binary_secret", &binary_data)
+    })
     .unwrap();
 
     let secret = ks.get_secret("img", "binary_secret").unwrap().unwrap();
@@ -265,10 +255,18 @@ fn test_keystore_per_image_scoping() {
 
     let ks = Keystore::open(&db_path, &key_path).unwrap();
 
-    ks.store_secret("app1", "key", b"value1", "env", "K", "file", None)
-        .unwrap();
-    ks.store_secret("app2", "key", b"value2", "env", "K", "file", None)
-        .unwrap();
+    ks.store_secret(&StoreSecretParams {
+        inject_target: "K",
+        extractor: "file",
+        ..StoreSecretParams::new("app1", "key", b"value1")
+    })
+    .unwrap();
+    ks.store_secret(&StoreSecretParams {
+        inject_target: "K",
+        extractor: "file",
+        ..StoreSecretParams::new("app2", "key", b"value2")
+    })
+    .unwrap();
 
     let s1 = ks.get_secret("app1", "key").unwrap().unwrap();
     let s2 = ks.get_secret("app2", "key").unwrap().unwrap();
@@ -289,10 +287,18 @@ fn test_keystore_replace_secret() {
 
     let ks = Keystore::open(&db_path, &key_path).unwrap();
 
-    ks.store_secret("img", "key", b"old-value", "env", "K", "file", None)
-        .unwrap();
-    ks.store_secret("img", "key", b"new-value", "env", "K", "file", None)
-        .unwrap();
+    ks.store_secret(&StoreSecretParams {
+        inject_target: "K",
+        extractor: "file",
+        ..StoreSecretParams::new("img", "key", b"old-value")
+    })
+    .unwrap();
+    ks.store_secret(&StoreSecretParams {
+        inject_target: "K",
+        extractor: "file",
+        ..StoreSecretParams::new("img", "key", b"new-value")
+    })
+    .unwrap();
 
     let secret = ks.get_secret("img", "key").unwrap().unwrap();
     assert_eq!(secret.value, b"new-value");
@@ -311,16 +317,30 @@ fn test_keystore_ttl_expiry_detection() {
     let ks = Keystore::open(&db_path, &key_path).unwrap();
 
     // Store a secret with 1-second TTL
-    ks.store_secret("img", "short-lived", b"val", "env", "V", "cmd", Some(1))
-        .unwrap();
+    ks.store_secret(&StoreSecretParams {
+        inject_target: "V",
+        extractor: "cmd",
+        ttl_seconds: Some(1),
+        ..StoreSecretParams::new("img", "short-lived", b"val")
+    })
+    .unwrap();
 
     // Store a secret with no TTL (should never expire)
-    ks.store_secret("img", "forever", b"val", "env", "V", "cmd", None)
-        .unwrap();
+    ks.store_secret(&StoreSecretParams {
+        inject_target: "V",
+        extractor: "cmd",
+        ..StoreSecretParams::new("img", "forever", b"val")
+    })
+    .unwrap();
 
     // Store a secret with long TTL
-    ks.store_secret("img", "long-lived", b"val", "env", "V", "cmd", Some(999999))
-        .unwrap();
+    ks.store_secret(&StoreSecretParams {
+        inject_target: "V",
+        extractor: "cmd",
+        ttl_seconds: Some(999999),
+        ..StoreSecretParams::new("img", "long-lived", b"val")
+    })
+    .unwrap();
 
     // Wait for short TTL to expire
     std::thread::sleep(std::time::Duration::from_secs(2));
@@ -360,15 +380,11 @@ fn test_keystore_persistence_across_opens() {
     // Store a secret
     {
         let ks = Keystore::open(&db_path, &key_path).unwrap();
-        ks.store_secret(
-            "img",
-            "persistent",
-            b"persisted-value",
-            "env",
-            "V",
-            "file",
-            None,
-        )
+        ks.store_secret(&StoreSecretParams {
+            inject_target: "V",
+            extractor: "file",
+            ..StoreSecretParams::new("img", "persistent", b"persisted-value")
+        })
         .unwrap();
     }
 
