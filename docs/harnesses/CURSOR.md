@@ -1,5 +1,9 @@
 # Cursor
 
+```youtube
+ZmbcZ_QfO6w
+```
+
 ## Quick setup
 
 Requires the [Coast CLI](../GETTING_STARTED.md). Copy this prompt into your
