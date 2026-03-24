@@ -108,11 +108,16 @@ async fn start_bare_services_if_present(
     container_id: &str,
     progress: &Option<tokio::sync::mpsc::Sender<BuildProgressEvent>>,
 ) -> bool {
-    let has_svc =
-        match rt.exec_in_coast(container_id, &["test", "-d", crate::bare_services::SUPERVISOR_DIR]).await {
-            Ok(r) => r.success(),
-            Err(_) => false,
-        };
+    let has_svc = match rt
+        .exec_in_coast(
+            container_id,
+            &["test", "-d", crate::bare_services::SUPERVISOR_DIR],
+        )
+        .await
+    {
+        Ok(r) => r.success(),
+        Err(_) => false,
+    };
     if has_svc {
         let start_cmd = crate::bare_services::generate_start_command();
         let _ = rt
@@ -160,7 +165,10 @@ async fn reapply_workspace_mount(
         String::new()
     };
     let mount_cmd = build_workspace_mount_command(&mount_src, &symlink_fix);
-    match rt.exec_in_coast(container_id, &["sh", "-c", &mount_cmd]).await {
+    match rt
+        .exec_in_coast(container_id, &["sh", "-c", &mount_cmd])
+        .await
+    {
         Ok(r) if r.success() => {
             info!(name = %name, src = %mount_src, "re-applied /workspace bind mount");
         }
@@ -222,7 +230,10 @@ async fn run_compose_and_wait_for_health(
     let ctx = super::compose_context_for_build(project, build_id);
     let up_subcmd = "up -d --remove-orphans --force-recreate";
     let compose_cmd = ctx.compose_shell(up_subcmd);
-    let compose_refs: Vec<&str> = compose_cmd.iter().map(std::string::String::as_str).collect();
+    let compose_refs: Vec<&str> = compose_cmd
+        .iter()
+        .map(std::string::String::as_str)
+        .collect();
     let _ = rt.exec_in_coast(container_id, &compose_refs).await;
 
     emit(
@@ -240,8 +251,7 @@ async fn run_compose_and_wait_for_health(
     for _ in 0..30 {
         let result = rt.exec_in_coast(container_id, &health_refs).await;
         if let Ok(ref exec_result) = result {
-            if exec_result.success()
-                && super::run::compose_ps_output_is_ready(&exec_result.stdout)
+            if exec_result.success() && super::run::compose_ps_output_is_ready(&exec_result.stdout)
             {
                 break;
             }
@@ -263,7 +273,11 @@ async fn backfill_build_id(state: &AppState, project: &str, name: &str) {
     let Some(home) = dirs::home_dir() else {
         return;
     };
-    let latest_link = home.join(".coast").join("images").join(project).join("latest");
+    let latest_link = home
+        .join(".coast")
+        .join("images")
+        .join(project)
+        .join("latest");
     let Ok(target) = std::fs::read_link(&latest_link) else {
         return;
     };
@@ -865,11 +879,7 @@ mod tests {
             Ok(())
         }
 
-        async fn exec_in_coast(
-            &self,
-            _container_id: &str,
-            _cmd: &[&str],
-        ) -> Result<ExecResult> {
+        async fn exec_in_coast(&self, _container_id: &str, _cmd: &[&str]) -> Result<ExecResult> {
             let mut results = self.exec_results.lock().unwrap();
             if results.is_empty() {
                 Ok(ExecResult {
