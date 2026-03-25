@@ -2,7 +2,8 @@
 export
 
 .PHONY: lint fix test coverage coverage-text check fmt zip-projects unpack-projects watch \
-       docs-version docs-status translate translate-all doc-search doc-search-all
+       docs-version docs-status translate translate-all doc-search doc-search-all \
+       run-dind-integration prune
 
 # Check formatting and run clippy. Matches CI: -D warnings promotes all
 # warnings to errors so local lint catches what CI catches.
@@ -81,3 +82,26 @@ doc-search-all:
 		echo "=== Indexing $$locale ==="; \
 		python3 scripts/generate-search-index.py --locale $$locale; \
 	done
+
+# --- Cleanup ---
+
+# Remove build artifacts and Docker leftovers.
+#   make prune          cargo clean + DinD docker images
+#   make prune DOCKER=1 also run docker system prune
+prune:
+	cargo clean
+	docker rmi coast-dindind-base coast-dindind-integration coast-dindind-wsl-ubuntu 2>/dev/null || true
+	docker volume rm coast-dindind-cargo-registry coast-dindind-cargo-git coast-dindind-target coast-dindind-coast-home 2>/dev/null || true
+ifdef DOCKER
+	docker system prune -a --volumes -f
+endif
+	@echo "Done. Run 'df -h /Users' to check free space."
+	@echo "Note: Docker Desktop may need a restart to compact its disk image."
+
+# --- DinD integration tests ---
+
+# Run integration tests inside a DinD container.
+# Usage: make run-dind-integration TEST=test_egress
+#        make run-dind-integration TEST=all
+run-dind-integration:
+	./dindind/integration-runner.sh $(TEST)

@@ -1,0 +1,79 @@
+# Integration test matrix for DinD runner.
+#
+# scenarios: Linux environments to run tests in.
+# tests:     Map of test name -> script path + optional scenario override.
+#
+# Usage:
+#   ./dindind/integration-runner.sh test_egress
+#   ./dindind/integration-runner.sh all
+#   make run-dind-integration TEST=test_egress
+
+scenarios:
+  ubuntu:
+    dockerfile: lib/base.Dockerfile
+
+defaults:
+  scenario: ubuntu
+  timeout: 600
+
+tests:
+  test_egress:
+    script: integrated-examples/test_egress.sh
+    timeout: 180
+    cached_seconds: 84
+  test_lifecycle:
+    script: integrated-examples/test_lifecycle.sh
+  test_assign:
+    script: integrated-examples/test_assign.sh
+  test_checkout:
+    script: integrated-examples/test_checkout.sh
+  test_lookup:
+    script: integrated-examples/test_lookup.sh
+  test_error_cases:
+    script: integrated-examples/test_error_cases.sh
+  test_secrets:
+    script: integrated-examples/test_secrets.sh
+  test_observability:
+    script: integrated-examples/test_observability.sh
+  test_multi_project:
+    script: integrated-examples/test_multi_project.sh
+  test_bare_services:
+    script: integrated-examples/test_bare_services.sh
+  test_no_compose:
+    script: integrated-examples/test_no_compose.sh
+  test_mixed_service_types:
+    script: integrated-examples/test_mixed_service_types.sh
+  test_hmr:
+    script: integrated-examples/test_hmr.sh
+  test_mcp:
+    script: integrated-examples/test_mcp.sh
+  test_agent_shell:
+    script: integrated-examples/test_agent_shell.sh
+  test_volume_shared:
+    script: integrated-examples/test_volume_shared.sh
+  test_volume_isolated:
+    script: integrated-examples/test_volume_isolated.sh
+  test_volume_shared_services:
+    script: integrated-examples/test_volume_shared_services.sh
+  test_volume_source:
+    script: integrated-examples/test_volume_source.sh
+  test_coastfile_types:
+    script: integrated-examples/test_coastfile_types.sh
+  test_dangling_containers:
+    script: integrated-examples/test_dangling_containers.sh
+  test_restart_services:
+    script: integrated-examples/test_restart_services.sh
+  test_nuke:
+    script: integrated-examples/test_nuke.sh
+  test_update:
+    script: integrated-examples/test_update.sh
+  test_sync:
+    script: integrated-examples/test_sync.sh
+  test_worktree_delete:
+    script: integrated-examples/test_worktree_delete.sh
+  test_worktree_daemon_restart:
+    script: integrated-examples/test_worktree_daemon_restart.sh
+  test_daemon_restart:
+    script: integrated-examples/test_daemon_restart.sh
+  test_cleanup_shared_services_volume:
+    script: integrated-examples/test_cleanup_shared_services_volume.sh
