@@ -539,7 +539,47 @@ fn ensure_registered_daemon_command(
     }
 }
 
+fn running_in_wsl() -> bool {
+    if std::env::var_os("WSL_DISTRO_NAME").is_some() || std::env::var_os("WSL_INTEROP").is_some() {
+        return true;
+    }
+    std::fs::read_to_string("/proc/version")
+        .map(|v| v.to_ascii_lowercase().contains("microsoft"))
+        .unwrap_or(false)
+}
+
+fn systemctl_available() -> bool {
+    std::process::Command::new("systemctl")
+        .arg("--version")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .is_ok()
+}
+
 fn run_ensure_registered_daemon(platform: InstallPlatform, registration_path: &Path) -> Result<()> {
+    if platform == InstallPlatform::Linux && !systemctl_available() {
+        let wsl_hint = if running_in_wsl() {
+            "\n\n  To enable systemd in WSL, add to /etc/wsl.conf:\n    \
+             [boot]\n    \
+             systemd=true\n  \
+             Then restart WSL: wsl --shutdown (from PowerShell)\n"
+        } else {
+            ""
+        };
+
+        eprintln!(
+            "{} systemctl is not available — the systemd unit was written to\n  \
+             {} but could not be enabled.{}\n\n  \
+             Starting the daemon directly instead...",
+            "warning:".yellow().bold(),
+            registration_path.display(),
+            wsl_hint,
+        );
+
+        return Ok(());
+    }
+
     let command = ensure_registered_daemon_command(platform, registration_path);
     let status = std::process::Command::new(command.program)
         .args(&command.args)
@@ -641,7 +681,8 @@ pub fn generate_systemd_unit(coastd_path: &str) -> String {
 async fn execute_install() -> Result<()> {
     let platform = current_install_platform()?;
     let registration_path = install_registration_path(platform)?;
-    let plan = build_install_plan(registration_path.exists(), daemon_status()?.running);
+    let status = daemon_status()?;
+    let plan = build_install_plan(registration_path.exists(), status.running);
     let coastd = resolve_coastd_path();
     let coastd_str = coastd.to_string_lossy();
     let coast_dir = dirs::home_dir()
@@ -662,8 +703,16 @@ async fn execute_install() -> Result<()> {
         write_install_registration(platform, &registration_path, &coastd_str, &log_dir)?;
     }
 
-    if plan.ensure_running {
+    let needs_direct_start = if plan.ensure_running {
+        let no_systemctl = platform == InstallPlatform::Linux && !systemctl_available();
         run_ensure_registered_daemon(platform, &registration_path)?;
+        no_systemctl
+    } else {
+        false
+    };
+
+    if needs_direct_start && !daemon_status()?.running {
+        execute_start().await?;
     }
 
     if plan.write_registration {

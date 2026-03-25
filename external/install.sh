@@ -47,6 +47,17 @@ esac
 PLATFORM="${OS}-${ARCH}"
 info "Detected platform: ${PLATFORM}"
 
+# --- Detect WSL ---
+IS_WSL=false
+if [ -n "${WSL_DISTRO_NAME:-}" ] || [ -n "${WSL_INTEROP:-}" ]; then
+  IS_WSL=true
+elif [ -f /proc/version ] && grep -qi microsoft /proc/version 2>/dev/null; then
+  IS_WSL=true
+fi
+if [ "$IS_WSL" = true ]; then
+  info "WSL detected (${WSL_DISTRO_NAME:-unknown distro})"
+fi
+
 # --- Find latest release with downloadable assets ---
 TMPDIR=$(mktemp -d)
 trap 'rm -rf "${TMPDIR}"' EXIT
@@ -167,15 +178,82 @@ if ! command -v socat >/dev/null 2>&1; then
   fi
 fi
 
+# --- Check Docker ---
+if ! command -v docker >/dev/null 2>&1; then
+  warn "Docker is not installed or not on PATH"
+  if [ "$IS_WSL" = true ]; then
+    printf "  Coast requires Docker Engine. Install it with:\n"
+    printf "    ${BOLD}sudo apt-get update && sudo apt-get install -y docker-ce docker-ce-cli containerd.io${RESET}\n"
+    printf "  Or install Docker Desktop for Windows and enable the WSL 2 backend.\n"
+  elif [ "$OS" = "darwin" ]; then
+    printf "  Install Docker Desktop: ${BOLD}https://www.docker.com/products/docker-desktop${RESET}\n"
+  else
+    printf "  Install Docker Engine: ${BOLD}https://docs.docker.com/engine/install/${RESET}\n"
+  fi
+fi
+
+# --- Detect stale coast binaries at other PATH locations ---
+STALE_COAST=""
+ORIGINAL_PATH="${PATH#*${INSTALL_DIR}:}"
+if [ "$ORIGINAL_PATH" = "$PATH" ]; then
+  ORIGINAL_PATH="${PATH}"
+fi
+OLD_IFS="$IFS"
+IFS=":"
+for dir in $ORIGINAL_PATH; do
+  if [ "$dir" = "${INSTALL_DIR}" ]; then
+    continue
+  fi
+  if [ -e "${dir}/coast" ]; then
+    STALE_COAST="${dir}/coast"
+    break
+  fi
+done
+IFS="$OLD_IFS"
+
+if [ -n "${STALE_COAST}" ]; then
+  warn "Found a stale coast binary at ${BOLD}${STALE_COAST}${RESET}"
+  printf "  This will shadow the newly installed version and likely cause errors.\n"
+  printf "  Remove it with: ${BOLD}rm ${STALE_COAST}${RESET}\n"
+  if [ -e "${STALE_COAST%coast}coastd" ]; then
+    printf "                  ${BOLD}rm ${STALE_COAST%coast}coastd${RESET}\n"
+  fi
+  printf "\n"
+fi
+
 # --- Verify ---
 if command -v coast >/dev/null 2>&1; then
   INSTALLED_VERSION=$(coast --version 2>/dev/null | head -1 | sed 's/coast /v/' || echo "unknown")
   printf "\n${GREEN}Done!${RESET} Coast installed successfully: ${BOLD}${INSTALLED_VERSION}${RESET}\n"
-  printf "  Run ${BOLD}coast help${RESET} to get started\n\n"
 else
-  warn "coast was installed to ${INSTALL_DIR} but is not on your PATH"
-  printf "  Restart your terminal, then run: ${BOLD}coast help${RESET}\n\n"
+  warn "coast was installed to ${INSTALL_DIR} but is not on your PATH yet"
+  printf "  Restart your terminal or run: ${BOLD}source ${SHELL_RC_FILE:-~/.bashrc}${RESET}\n"
 fi
+
+# --- Next steps ---
+printf "\n${BOLD}Next steps:${RESET}\n"
+if [ -n "${STALE_COAST}" ]; then
+  printf "  ${RED}0. Remove the stale binary:${RESET} ${BOLD}rm ${STALE_COAST}${RESET}\n"
+fi
+printf "  1. ${BOLD}coast daemon install${RESET}    Register the daemon to start at login\n"
+
+if [ "$IS_WSL" = true ]; then
+  HAS_SYSTEMD=false
+  if command -v systemctl >/dev/null 2>&1 && systemctl --user status >/dev/null 2>&1; then
+    HAS_SYSTEMD=true
+  fi
+  if [ "$HAS_SYSTEMD" = false ]; then
+    printf "\n${YELLOW}  WSL note:${RESET} coast daemon install requires systemd.\n"
+    printf "  If it fails, enable systemd in WSL by adding to ${BOLD}/etc/wsl.conf${RESET}:\n"
+    printf "    [boot]\n"
+    printf "    systemd=true\n"
+    printf "  Then restart WSL: ${BOLD}wsl --shutdown${RESET} (from PowerShell)\n"
+    printf "\n  Alternatively, start the daemon manually each session:\n"
+    printf "    ${BOLD}coast daemon start${RESET}\n"
+  fi
+fi
+
+printf "  2. ${BOLD}coast help${RESET}              See all available commands\n\n"
 ) >&2
 
 # Make coast available in the current shell (works when invoked via eval)
