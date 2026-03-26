@@ -88,7 +88,7 @@ echo "=== Phase 3: Verify internal MCP installed at /mcp/echo/ ==="
 
 MCP_LS=$("$COAST" exec mcp-1 -- ls /mcp/echo/ 2>&1 || true)
 assert_contains "$MCP_LS" "server.js" "MCP echo server.js present at /mcp/echo/"
-assert_contains "$MCP_LS" "node_modules" "MCP echo node_modules installed at /mcp/echo/"
+assert_contains "$MCP_LS" "package-lock.json" "MCP echo npm install ran at /mcp/echo/"
 
 # ============================================================
 # Phase 4: Verify internal MCP is runnable

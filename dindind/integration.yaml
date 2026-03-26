@@ -75,8 +75,12 @@ tests:
     cached_seconds: 103
   test_mcp:
     script: integrated-examples/test_mcp.sh
+    status: pass
+    cached_seconds: 70
   test_agent_shell:
     script: integrated-examples/test_agent_shell.sh
+    status: pass
+    cached_seconds: 64
   test_volume_shared:
     script: integrated-examples/test_volume_shared.sh
     status: pass

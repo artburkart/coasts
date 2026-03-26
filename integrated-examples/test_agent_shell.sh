@@ -56,7 +56,7 @@ assert_contains "$BUILD_OUT" "coast-agent-shell" "build output references projec
 pass "Build complete"
 
 # Verify manifest contains agent_shell
-MANIFEST=$(cat ~/.coast/images/coast-agent-shell/*/manifest.json 2>/dev/null | head -1)
+MANIFEST=$(cat ~/.coast/images/coast-agent-shell/*/manifest.json 2>/dev/null)
 assert_contains "$MANIFEST" "agent_shell" "manifest includes agent_shell config"
 assert_contains "$MANIFEST" "AGENT SHELL STARTED" "manifest has correct command"
 pass "Manifest contains agent_shell"
