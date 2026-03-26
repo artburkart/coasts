@@ -91,6 +91,19 @@ fn write_coast_section(coastfile: &Coastfile, out: &mut String) {
     if let Some(ref primary_port) = coastfile.primary_port {
         writeln!(out, "primary_port = {}", toml_quote(primary_port)).unwrap();
     }
+    if !coastfile.private_paths.is_empty() {
+        writeln!(
+            out,
+            "private_paths = [{}]",
+            coastfile
+                .private_paths
+                .iter()
+                .map(|p| toml_quote(p))
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+        .unwrap();
+    }
 }
 
 fn write_setup_section(coastfile: &Coastfile, out: &mut String) {
@@ -518,6 +531,7 @@ mod tests {
                 cache: vec![],
             }],
             agent_shell: None,
+            private_paths: vec![],
         };
 
         let serialized = coastfile.to_standalone_toml();

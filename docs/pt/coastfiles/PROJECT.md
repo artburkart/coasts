@@ -117,6 +117,28 @@ api = 8080
 
 Veja [Primary Port and DNS](../concepts_and_terminology/PRIMARY_PORT_AND_DNS.md) para saber como isso habilita roteamento por subdomínio e templates de URL.
 
+### `private_paths`
+
+Diretórios relativos ao workspace que devem ser por instância em vez de compartilhados entre instâncias do Coast. Cada caminho listado recebe seu próprio bind mount a partir de um diretório de armazenamento por instância (`/coast-private/`) dentro do contêiner.
+
+```toml
+[coast]
+name = "my-app"
+private_paths = ["frontend/.next"]
+```
+
+Isso resolve conflitos causados por múltiplas instâncias do Coast compartilhando o mesmo sistema de arquivos subjacente via bind mounts. Quando duas instâncias executam `next dev` contra a mesma raiz de projeto, a segunda instância vê o lock de arquivo `.next/dev/lock` da primeira e se recusa a iniciar. Com `private_paths`, cada instância recebe seu próprio diretório `.next`, então os locks não colidem.
+
+Use `private_paths` para qualquer diretório em que instâncias concorrentes gravando no mesmo inode causem problemas: locks de arquivo, caches de build, arquivos PID ou diretórios de estado específicos de ferramentas.
+
+Aceita um array de caminhos relativos. Os caminhos não devem ser absolutos, não devem conter `..` e não devem se sobrepor (por exemplo, listar tanto `frontend/.next` quanto `frontend/.next/cache` é um erro). Veja [Private Paths](../concepts_and_terminology/PRIVATE_PATHS.md) para o conceito completo.
+
+```toml
+[coast]
+name = "my-app"
+private_paths = ["frontend/.next", ".turbo", "apps/web/.next"]
+```
+
 ## `[coast.setup]`
 
 Personaliza o próprio contêiner Coast — instalando ferramentas, executando etapas de build e materializando arquivos de configuração. Tudo em `[coast.setup]` é executado dentro do contêiner DinD (não dentro dos seus serviços do compose).

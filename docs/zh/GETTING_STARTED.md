@@ -14,6 +14,12 @@ coast daemon install
 
 *如果你决定不运行 `coast daemon install`，那么你需要负责每一次都手动通过 `coast daemon start` 启动守护进程。*
 
+> **提示:** 使用上述命令安装 Coasts 后，你可以让你的编码智能体处理项目设置。复制下面的提示词，并将其粘贴到一个在你正在设置的项目根目录中初始化的聊天里。
+
+```prompt-copy
+installation_prompt.txt
+```
+
 ## 要求
 
 - macOS 或 Linux

@@ -498,6 +498,7 @@
   "docs.nav.agentShells": "Агентные оболочки",
   "docs.nav.mcpServers": "MCP-серверы",
   "docs.nav.filesystem": "Файловая система",
+  "docs.nav.privatePaths": "Приватные пути",
   "docs.nav.bareServices": "Bare-сервисы",
   "docs.nav.mixedServiceTypes": "Смешанные типы сервисов",
   "docs.nav.performanceOptimizations": "Оптимизация производительности",

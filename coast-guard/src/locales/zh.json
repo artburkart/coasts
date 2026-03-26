@@ -511,6 +511,7 @@
   "docs.nav.agentShells": "Agent Shells",
   "docs.nav.mcpServers": "MCP 服务器",
   "docs.nav.filesystem": "文件系统",
+  "docs.nav.privatePaths": "私有路径",
   "docs.nav.bareServices": "裸服务",
   "docs.nav.mixedServiceTypes": "混合服务类型",
   "docs.nav.performanceOptimizations": "性能优化",

@@ -92,6 +92,22 @@ Si usas `[assign.rebuild_triggers]`, Coast también ejecuta `git diff --name-onl
 
 `coast unassign` revierte `/workspace` a `/host-project` (la raíz del proyecto). `coast start` después de un stop vuelve a aplicar el montaje correcto según si la instancia tiene un worktree asignado.
 
+## Rutas privadas
+
+Debido a que cada instancia de Coast hace bind-mount del mismo directorio del host, todas comparten los mismos inodos en disco. Esta es la característica fundamental que hace que la sincronización instantánea de archivos funcione —pero también significa que los bloqueos a nivel de archivo entran en conflicto entre instancias.
+
+Next.js 16, por ejemplo, adquiere un `flock` exclusivo sobre `.next/dev/lock` cuando se inicia el servidor de desarrollo. Como `flock` es un bloqueo del kernel a nivel de inodo, una segunda instancia de Coast que intente iniciar `next dev` contra la misma raíz del proyecto ve el bloqueo de la primera instancia y sale inmediatamente. El mismo problema se aplica a cualquier herramienta que use bloqueos `flock`, bloqueos `fcntl` o archivos PID en el workspace.
+
+El campo `private_paths` del Coastfile resuelve esto dándole a cada instancia su propio directorio para las rutas especificadas. Después de montar `/workspace` con propagación compartida, Coast hace bind-mount de un directorio por instancia desde `/coast-private/` sobre cada ruta declarada:
+
+```text
+/workspace/frontend/.next  ←──mount──  /coast-private/frontend/.next
+```
+
+`/coast-private/` vive en el propio sistema de archivos del contenedor DinD —no en el montaje compartido del host—, por lo que cada instancia obtiene naturalmente inodos separados. Los montajes de rutas privadas se vuelven a aplicar en `coast start`, `coast assign` y `coast unassign`.
+
+Para detalles de configuración, consulta [`private_paths` en la referencia de Coastfile](../coastfiles/PROJECT.md) y la página conceptual de [Private Paths](PRIVATE_PATHS.md).
+
 ## Todos los montajes
 
 Cada contenedor de Coast tiene estos montajes:
@@ -99,6 +115,7 @@ Cada contenedor de Coast tiene estos montajes:
 | Path | Type | Access | Purpose |
 |---|---|---|---|
 | `/workspace` | bind mount (in-container) | RW | Raíz del proyecto o worktree. Conmutable al asignar. |
+| `/coast-private/*` | bind mount (in-container) | RW | Directorios privados por instancia para las rutas declaradas en `private_paths`. |
 | `/host-project` | Docker bind mount | RW | Raíz del proyecto sin procesar. Fijo en la creación del contenedor. |
 | `/image-cache` | Docker bind mount | RO | Tarballs OCI predescargados desde `~/.coast/image-cache/`. |
 | `/coast-artifact` | Docker bind mount | RO | Artefacto de build con archivos de compose reescritos. |

@@ -6,6 +6,7 @@
 - [Run](RUN.md) — 最新のビルドから新しい Coast インスタンスを作成し、必要に応じて worktree を割り当てます。
 - [Remove](REMOVE.md) — クリーンに再作成したい場合や Coasts を停止したい場合に、Coast インスタンスとその分離されたランタイム状態を削除します。
 - [Filesystem](FILESYSTEM.md) — ホストと Coast 間の共有マウント、ホスト側エージェント、そして worktree の切り替え。
+- [Private Paths](PRIVATE_PATHS.md) — 共有 bind mount 間で競合するワークスペースパスに対する、インスタンスごとの分離。
 - [Coast Daemon](DAEMON.md) — ライフサイクル操作を実行するローカルの `coastd` コントロールプレーン。
 - [Coast CLI](CLI.md) — コマンド、スクリプト、エージェントのワークフローのためのターミナル・インターフェース。
 - [Coastguard](COASTGUARD.md) — 可観測性と制御のために `coast ui` で起動する Web UI。

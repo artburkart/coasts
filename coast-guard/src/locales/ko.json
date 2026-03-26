@@ -511,6 +511,7 @@
   "docs.nav.agentShells": "에이전트 셸",
   "docs.nav.mcpServers": "MCP 서버",
   "docs.nav.filesystem": "파일 시스템",
+  "docs.nav.privatePaths": "프라이빗 경로",
   "docs.nav.bareServices": "베어 서비스",
   "docs.nav.mixedServiceTypes": "혼합 서비스 유형",
   "docs.nav.performanceOptimizations": "성능 최적화",

@@ -27,7 +27,12 @@ Use `coast exec` para:
 Execute diretamente no host:
 - Linting, verificação de tipos, formatação
 - Operações de git
-- Testes com Playwright e testes de navegador
+- Testes com Playwright e testes de navegador (se o projeto os usar) — execute o navegador
+  no host, apontado para a URL de porta dinâmica do Coast (obtenha-a com
+  `coast lookup` ou `coast ports`). Se o Coast estiver com checkout feito, a
+  porta canônica (por exemplo, localhost:3000) também funciona, mas prefira a porta dinâmica
+  a menos que o usuário diga o contrário.
+  NÃO execute Playwright dentro do Coast via `coast exec`.
 - Instalação de dependências do lado do host (npm install, pip install)
 - Busca de arquivos, geração de código, análise estática
 
@@ -36,7 +41,7 @@ Exemplo:
   coast exec <instance> -- sh -c "cd <dir> && npm test"    # needs DB
   coast exec <instance> --service <service>                # service shell
   npm run lint                                              # host is fine
-  npx playwright test                                       # host is fine
+  BASE_URL=http://localhost:62217 npx playwright test       # host — use dynamic port
 
 ## Runtime feedback
 
@@ -156,9 +161,22 @@ que precisam de serviços em execução dentro do contêiner.
 - Verificação de tipos (`tsc --noEmit`, `go vet`)
 - Formatação (`prettier`, `gofmt`)
 - Operações de git
-- Testes com Playwright e testes de navegador
+- Testes com Playwright e testes de navegador (se o projeto os usar) — execute o navegador
+  no host, apontado para a URL de porta dinâmica do Coast (obtenha-a com
+  `coast lookup` ou `coast ports`). Se o Coast estiver com checkout feito, a
+  porta canônica (por exemplo, localhost:3000) também funciona, mas prefira a porta dinâmica
+  a menos que o usuário diga o contrário.
+  NÃO execute Playwright dentro do Coast via `coast exec`.
 - Análise estática, geração de código
 - Instalação de pacotes (`npm install`, `pip install`)
+
+Exemplo — o Playwright acessa o frontend pela porta dinâmica:
+
+  coast ports <instance>
+  # SERVICE    CANONICAL  DYNAMIC
+  # ★ web      3000       62217
+
+  BASE_URL=http://localhost:62217 npx playwright test   # host, not coast exec
 
 ## Create and Assign
 

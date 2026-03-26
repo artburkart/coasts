@@ -130,3 +130,7 @@ tests:
     status: pass
     cached_seconds: 97
     note: "compose service name must match shared_service key in Coastfile"
+  test_private_paths:
+    script: integrated-examples/test_private_paths.sh
+    status: pass
+    cached_seconds: 79

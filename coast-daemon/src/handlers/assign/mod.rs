@@ -18,10 +18,10 @@ use coast_core::types::InstanceStatus;
 
 use crate::server::AppState;
 
-use util::{emit, load_coastfile_data, revert_assign_status, TOTAL_STEPS};
+use util::{emit, revert_assign_status, TOTAL_STEPS};
 
 pub use explain::handle_explain;
-pub use util::{has_compose, read_project_root};
+pub use util::{has_compose, load_coastfile_data, read_project_root};
 pub use worktree::detect_worktree_dir_from_git;
 
 /// Handle an assign request with streaming progress.

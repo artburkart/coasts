@@ -117,6 +117,28 @@ api = 8080
 
 이를 통해 서브도메인 라우팅과 URL 템플릿이 활성화되는 방식은 [Primary Port and DNS](../concepts_and_terminology/PRIMARY_PORT_AND_DNS.md)를 참고하세요.
 
+### `private_paths`
+
+Coast 인스턴스 간에 공유되지 않고 인스턴스별이어야 하는 워크스페이스 기준 상대 디렉터리입니다. 나열된 각 경로는 컨테이너 내부의 인스턴스별 저장 디렉터리(``/coast-private/``)로부터 자체 바인드 마운트를 갖습니다.
+
+```toml
+[coast]
+name = "my-app"
+private_paths = ["frontend/.next"]
+```
+
+이 기능은 여러 Coast 인스턴스가 바인드 마운트를 통해 동일한 기반 파일시스템을 공유하면서 발생하는 충돌을 해결합니다. 두 인스턴스가 같은 프로젝트 루트에 대해 모두 `next dev`를 실행하면, 두 번째 인스턴스는 첫 번째 인스턴스의 `.next/dev/lock` 파일 잠금을 보고 시작을 거부합니다. `private_paths`를 사용하면 각 인스턴스가 자체 `.next` 디렉터리를 가지므로 잠금이 서로 충돌하지 않습니다.
+
+동시 인스턴스가 같은 inode에 쓰기를 수행할 때 문제가 생기는 모든 디렉터리에 `private_paths`를 사용하세요. 예: 파일 잠금, 빌드 캐시, PID 파일, 또는 도구별 상태 디렉터리.
+
+상대 경로 배열을 받습니다. 경로는 절대 경로여서는 안 되고, `..`를 포함해서도 안 되며, 서로 겹쳐서도 안 됩니다(예: `frontend/.next`와 `frontend/.next/cache`를 둘 다 나열하면 오류). 전체 개념은 [Private Paths](../concepts_and_terminology/PRIVATE_PATHS.md)를 참고하세요.
+
+```toml
+[coast]
+name = "my-app"
+private_paths = ["frontend/.next", ".turbo", "apps/web/.next"]
+```
+
 ## `[coast.setup]`
 
 Coast 컨테이너 자체를 커스터마이즈합니다 — 도구 설치, 빌드 단계 실행, 설정 파일 구체화 등을 포함합니다. `[coast.setup]`의 모든 항목은 DinD 컨테이너 내부에서 실행됩니다(compose 서비스 내부가 아님).

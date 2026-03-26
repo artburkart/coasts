@@ -92,6 +92,22 @@ worktree 会在主机的 `{project_root}/.worktrees/{worktree_name}` 创建。`.
 
 `coast unassign` 会将 `/workspace` 还原回 `/host-project`（项目根目录）。停止后执行 `coast start` 会根据实例是否已分配 worktree 来重新应用正确的挂载。
 
+## Private Paths
+
+因为每个 Coast 实例都会对同一个主机目录进行 bind-mount，所以它们在磁盘上共享相同的 inode。这正是实现文件即时同步的基础特性——但这也意味着文件级锁会在实例之间发生冲突。
+
+以 Next.js 16 为例，开发服务器启动时会对 `.next/dev/lock` 获取一个排他的 `flock`。由于 `flock` 是 inode 级别的内核锁，第二个尝试针对同一项目根目录启动 `next dev` 的 Coast 实例会看到第一个实例的锁，并立即退出。任何在工作区中使用 `flock`、`fcntl` 锁或 PID 文件的工具也会遇到同样的问题。
+
+Coastfile 中的 `private_paths` 字段通过为指定路径提供每个实例各自独立的目录来解决这个问题。在以共享传播方式挂载 `/workspace` 之后，Coast 会将来自 `/coast-private/` 的实例私有目录 bind-mount 到每个已声明路径之上:
+
+```text
+/workspace/frontend/.next  ←──mount──  /coast-private/frontend/.next
+```
+
+`/coast-private/` 位于 DinD 容器自身的文件系统上——而不是共享的主机挂载上——因此每个实例天然都会获得独立的 inode。私有路径挂载会在 `coast start`、`coast assign` 和 `coast unassign` 时重新应用。
+
+有关配置细节，请参见 [Coastfile 参考中的 `private_paths`](../coastfiles/PROJECT.md) 以及 [Private Paths](PRIVATE_PATHS.md) 概念页面。
+
 ## 所有挂载
 
 每个 Coast 容器都有这些挂载:
@@ -99,6 +115,7 @@ worktree 会在主机的 `{project_root}/.worktrees/{worktree_name}` 创建。`.
 | Path | Type | Access | Purpose |
 |---|---|---|---|
 | `/workspace` | bind mount (in-container) | RW | 项目根目录或 worktree。assign 时可切换。 |
+| `/coast-private/*` | bind mount (in-container) | RW | 为 `private_paths` 中声明的路径提供每实例私有目录。 |
 | `/host-project` | Docker bind mount | RW | 原始项目根目录。容器创建时固定。 |
 | `/image-cache` | Docker bind mount | RO | 来自 `~/.coast/image-cache/` 的预拉取 OCI tarball。 |
 | `/coast-artifact` | Docker bind mount | RO | 带有重写后的 compose 文件的构建产物。 |

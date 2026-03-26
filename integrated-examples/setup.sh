@@ -1337,5 +1337,34 @@ setup_coast_noautostart() {
 
 setup_coast_noautostart
 
+# --- coast-private-paths ---
+# Tests per-instance filesystem isolation via private_paths.
+# No git repo needed, no compose, no services — just a DinD container
+# with private_paths = ["data"] for mount isolation testing.
+
+setup_coast_private_paths() {
+    local dir="$PROJECTS_DIR/coast-private-paths"
+    echo "Setting up coast-private-paths..."
+    mkdir -p "$dir"
+
+    cat > "$dir/Coastfile" << 'COASTFILE_EOF'
+# coast-private-paths: Tests per-instance filesystem isolation via private_paths.
+#
+# The private_paths field gives each Coast instance its own bind mount
+# for the listed directories, so writes (including flock locks) don't
+# conflict across instances sharing the same host project root.
+
+[coast]
+name = "coast-private-paths"
+runtime = "dind"
+private_paths = ["data"]
+autostart = false
+COASTFILE_EOF
+
+    echo "  coast-private-paths ready"
+}
+
+setup_coast_private_paths
+
 echo ""
 echo "All examples initialized. Run 'coast build' inside any example to get started."

@@ -14,6 +14,12 @@ coast daemon install
 
 *`coast daemon install` を実行しないと決めた場合、毎回 `coast daemon start` でデーモンを手動で起動する責任はあなたにあります。*
 
+> **Tip:** 上記のコマンドで Coasts をインストールした後は、コーディングエージェントにプロジェクトのセットアップを任せることができます。以下のプロンプトをコピーして、セットアップ対象のプロジェクトのルートディレクトリで開始したチャットに貼り付けてください。
+
+```prompt-copy
+installation_prompt.txt
+```
+
 ## 要件
 
 - macOS または Linux

@@ -117,6 +117,28 @@ api = 8080
 
 Consulta [Primary Port and DNS](../concepts_and_terminology/PRIMARY_PORT_AND_DNS.md) para ver cómo esto habilita el enrutamiento por subdominios y las plantillas de URL.
 
+### `private_paths`
+
+Directorios relativos al espacio de trabajo que deben ser por instancia en lugar de compartirse entre instancias de Coast. Cada ruta listada obtiene su propio bind mount desde un directorio de almacenamiento por instancia (`/coast-private/`) dentro del contenedor.
+
+```toml
+[coast]
+name = "my-app"
+private_paths = ["frontend/.next"]
+```
+
+Esto resuelve conflictos causados por múltiples instancias de Coast que comparten el mismo sistema de archivos subyacente mediante bind mounts. Cuando dos instancias ejecutan `next dev` contra la misma raíz de proyecto, la segunda instancia ve el bloqueo de archivo `.next/dev/lock` de la primera y se niega a iniciarse. Con `private_paths`, cada instancia obtiene su propio directorio `.next`, por lo que los bloqueos no colisionan.
+
+Usa `private_paths` para cualquier directorio donde instancias concurrentes escribiendo en el mismo inode causen problemas: bloqueos de archivo, cachés de compilación, archivos PID o directorios de estado específicos de herramientas.
+
+Acepta un arreglo de rutas relativas. Las rutas no deben ser absolutas, no deben contener `..` y no deben superponerse (por ejemplo, listar tanto `frontend/.next` como `frontend/.next/cache` es un error). Consulta [Private Paths](../concepts_and_terminology/PRIVATE_PATHS.md) para ver el concepto completo.
+
+```toml
+[coast]
+name = "my-app"
+private_paths = ["frontend/.next", ".turbo", "apps/web/.next"]
+```
+
 ## `[coast.setup]`
 
 Personaliza el propio contenedor de Coast — instalando herramientas, ejecutando pasos de compilación y materializando archivos de configuración. Todo en `[coast.setup]` se ejecuta dentro del contenedor DinD (no dentro de tus servicios de compose).

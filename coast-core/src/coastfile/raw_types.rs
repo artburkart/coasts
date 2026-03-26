@@ -110,6 +110,8 @@ pub(super) struct RawCoastSection {
     pub autostart: Option<bool>,
     #[serde(default)]
     pub primary_port: Option<String>,
+    #[serde(default)]
+    pub private_paths: Option<Vec<String>>,
 }
 
 #[derive(Debug, Deserialize)]

@@ -1,9 +1,9 @@
 {
   "es": {
     "GETTING_STARTED.md": {
-      "commit": "8a556b7",
-      "source_sha256": "2bab1924e458576b60653ab43111b06d10dbb323daaad69cee3ec0acc2964a92",
-      "translated_at": "2026-03-24T21:12:12Z"
+      "commit": "2b2ae89",
+      "source_sha256": "2f0b7c8b541cdeb3ffde05a19e2bb375d5c8c0acd3e1c77e75b030c6bc58f203",
+      "translated_at": "2026-03-26T23:25:04Z"
     },
     "README.md": {
       "commit": "8a556b7",
@@ -51,14 +51,14 @@
       "translated_at": "2026-02-28T13:10:06Z"
     },
     "coastfiles/PROJECT.md": {
-      "commit": "36c1f8f",
-      "source_sha256": "a98bef3fcf05c7167873780be83bfe355d232f490062c2a61db6d4594bfadc55",
-      "translated_at": "2026-03-16T08:47:07Z"
+      "commit": "2b2ae89",
+      "source_sha256": "adffeb6e53123b142acd2e38b46085ed357b99158d01730ba50875564bdb8ed8",
+      "translated_at": "2026-03-26T23:25:04Z"
     },
     "coastfiles/README.md": {
-      "commit": "36c1f8f",
-      "source_sha256": "21ca2aaff498e4a04cc9e9305c1afe254ac32375c835b46517df6cf438734dc6",
-      "translated_at": "2026-03-16T08:47:07Z"
+      "commit": "2b2ae89",
+      "source_sha256": "f935908ea7ed49550499aa1b8db9c538db752c97c5dda3d5ff65c0efd085d05b",
+      "translated_at": "2026-03-26T23:25:04Z"
     },
     "coastfiles/SECRETS.md": {
       "commit": "3357381",
@@ -141,9 +141,9 @@
       "translated_at": "2026-03-23T06:59:53Z"
     },
     "concepts_and_terminology/FILESYSTEM.md": {
-      "commit": "85b1396",
-      "source_sha256": "8ef51c567a944f6c2e066b700c7278eca64656a050205f7f50f88cfd47409aea",
-      "translated_at": "2026-03-09T09:08:24Z"
+      "commit": "2b2ae89",
+      "source_sha256": "2620c6a6cb6bf922f0c579dffe1a9db97dfa328776d18d5328f2ac79e11a0011",
+      "translated_at": "2026-03-26T23:25:04Z"
     },
     "concepts_and_terminology/LOGS.md": {
       "commit": "3357381",
@@ -180,10 +180,15 @@
       "source_sha256": "3eacf8c2cd014603d5ad52d96dd0db8f0f8c6a5547f5674919a2a29e4b1d069e",
       "translated_at": "2026-02-28T13:10:06Z"
     },
+    "concepts_and_terminology/PRIVATE_PATHS.md": {
+      "commit": "2b2ae89",
+      "source_sha256": "d579a8e4ddec140ee15761e232196a154c98c49e8b6c8ac5e9c2277cf37c03a1",
+      "translated_at": "2026-03-26T23:25:04Z"
+    },
     "concepts_and_terminology/README.md": {
-      "commit": "dc5d0c8",
-      "source_sha256": "83e845e8f0330850af780ed44c68345b83445661bb552383a8efad392eb97a03",
-      "translated_at": "2026-03-20T08:34:06Z"
+      "commit": "2b2ae89",
+      "source_sha256": "62a8501af4ce702978f69d0ecdeb8d18cd449e4e1c4bfec15fc5dcdcc714515b",
+      "translated_at": "2026-03-26T23:25:04Z"
     },
     "concepts_and_terminology/REMOVE.md": {
       "commit": "dc5d0c8",
@@ -221,9 +226,9 @@
       "translated_at": "2026-02-28T13:10:06Z"
     },
     "doc_ordering.txt": {
-      "commit": "7605a21",
-      "source_sha256": "f67f01eedb34ef7607c0918729e72c09650d4353c633c36c694275983d34ffa2",
-      "translated_at": "2026-03-23T06:59:53Z"
+      "commit": "2b2ae89",
+      "source_sha256": "8d7b236e035a96e834ec5ae443f1db0d665b53750b7168a24f6ed05fd61d87b7",
+      "translated_at": "2026-03-26T23:25:04Z"
     },
     "harnesses/CLAUDE_CODE.md": {
       "commit": "8a556b7",
@@ -356,16 +361,16 @@
       "translated_at": "2026-03-05T00:12:10Z"
     },
     "skills_prompt.txt": {
-      "commit": "8a556b7",
-      "source_sha256": "035c22d6e5d79613923b2dfe2b4031af446de483735689e4f60273d881c52a75",
-      "translated_at": "2026-03-24T21:12:12Z"
+      "commit": "2b2ae89",
+      "source_sha256": "36f396f7296b38fbea5d88f27f025e5f134033bba40e83a643298acb3d2b1672",
+      "translated_at": "2026-03-26T23:25:04Z"
     }
   },
   "ja": {
     "GETTING_STARTED.md": {
-      "commit": "8a556b7",
-      "source_sha256": "2bab1924e458576b60653ab43111b06d10dbb323daaad69cee3ec0acc2964a92",
-      "translated_at": "2026-03-24T20:58:22Z"
+      "commit": "2b2ae89",
+      "source_sha256": "2f0b7c8b541cdeb3ffde05a19e2bb375d5c8c0acd3e1c77e75b030c6bc58f203",
+      "translated_at": "2026-03-26T23:17:09Z"
     },
     "README.md": {
       "commit": "8a556b7",
@@ -413,14 +418,14 @@
       "translated_at": "2026-02-28T12:45:25Z"
     },
     "coastfiles/PROJECT.md": {
-      "commit": "36c1f8f",
-      "source_sha256": "a98bef3fcf05c7167873780be83bfe355d232f490062c2a61db6d4594bfadc55",
-      "translated_at": "2026-03-16T08:42:26Z"
+      "commit": "2b2ae89",
+      "source_sha256": "adffeb6e53123b142acd2e38b46085ed357b99158d01730ba50875564bdb8ed8",
+      "translated_at": "2026-03-26T23:17:09Z"
     },
     "coastfiles/README.md": {
-      "commit": "36c1f8f",
-      "source_sha256": "21ca2aaff498e4a04cc9e9305c1afe254ac32375c835b46517df6cf438734dc6",
-      "translated_at": "2026-03-16T08:42:26Z"
+      "commit": "2b2ae89",
+      "source_sha256": "f935908ea7ed49550499aa1b8db9c538db752c97c5dda3d5ff65c0efd085d05b",
+      "translated_at": "2026-03-26T23:17:09Z"
     },
     "coastfiles/SECRETS.md": {
       "commit": "3357381",
@@ -503,9 +508,9 @@
       "translated_at": "2026-03-23T06:42:32Z"
     },
     "concepts_and_terminology/FILESYSTEM.md": {
-      "commit": "85b1396",
-      "source_sha256": "8ef51c567a944f6c2e066b700c7278eca64656a050205f7f50f88cfd47409aea",
-      "translated_at": "2026-03-09T08:59:59Z"
+      "commit": "2b2ae89",
+      "source_sha256": "2620c6a6cb6bf922f0c579dffe1a9db97dfa328776d18d5328f2ac79e11a0011",
+      "translated_at": "2026-03-26T23:17:09Z"
     },
     "concepts_and_terminology/LOGS.md": {
       "commit": "3357381",
@@ -542,10 +547,15 @@
       "source_sha256": "3eacf8c2cd014603d5ad52d96dd0db8f0f8c6a5547f5674919a2a29e4b1d069e",
       "translated_at": "2026-02-28T12:45:25Z"
     },
+    "concepts_and_terminology/PRIVATE_PATHS.md": {
+      "commit": "2b2ae89",
+      "source_sha256": "d579a8e4ddec140ee15761e232196a154c98c49e8b6c8ac5e9c2277cf37c03a1",
+      "translated_at": "2026-03-26T23:17:09Z"
+    },
     "concepts_and_terminology/README.md": {
-      "commit": "dc5d0c8",
-      "source_sha256": "83e845e8f0330850af780ed44c68345b83445661bb552383a8efad392eb97a03",
-      "translated_at": "2026-03-20T07:36:10Z"
+      "commit": "2b2ae89",
+      "source_sha256": "62a8501af4ce702978f69d0ecdeb8d18cd449e4e1c4bfec15fc5dcdcc714515b",
+      "translated_at": "2026-03-26T23:17:09Z"
     },
     "concepts_and_terminology/REMOVE.md": {
       "commit": "dc5d0c8",
@@ -583,9 +593,9 @@
       "translated_at": "2026-02-28T12:45:25Z"
     },
     "doc_ordering.txt": {
-      "commit": "7605a21",
-      "source_sha256": "f67f01eedb34ef7607c0918729e72c09650d4353c633c36c694275983d34ffa2",
-      "translated_at": "2026-03-23T06:42:32Z"
+      "commit": "2b2ae89",
+      "source_sha256": "8d7b236e035a96e834ec5ae443f1db0d665b53750b7168a24f6ed05fd61d87b7",
+      "translated_at": "2026-03-26T23:17:09Z"
     },
     "harnesses/CLAUDE_CODE.md": {
       "commit": "8a556b7",
@@ -718,16 +728,16 @@
       "translated_at": "2026-03-05T00:03:15Z"
     },
     "skills_prompt.txt": {
-      "commit": "8a556b7",
-      "source_sha256": "035c22d6e5d79613923b2dfe2b4031af446de483735689e4f60273d881c52a75",
-      "translated_at": "2026-03-24T20:58:22Z"
+      "commit": "2b2ae89",
+      "source_sha256": "36f396f7296b38fbea5d88f27f025e5f134033bba40e83a643298acb3d2b1672",
+      "translated_at": "2026-03-26T23:17:09Z"
     }
   },
   "ko": {
     "GETTING_STARTED.md": {
-      "commit": "8a556b7",
-      "source_sha256": "2bab1924e458576b60653ab43111b06d10dbb323daaad69cee3ec0acc2964a92",
-      "translated_at": "2026-03-24T21:02:24Z"
+      "commit": "2b2ae89",
+      "source_sha256": "2f0b7c8b541cdeb3ffde05a19e2bb375d5c8c0acd3e1c77e75b030c6bc58f203",
+      "translated_at": "2026-03-26T23:19:25Z"
     },
     "README.md": {
       "commit": "8a556b7",
@@ -775,14 +785,14 @@
       "translated_at": "2026-02-28T12:52:18Z"
     },
     "coastfiles/PROJECT.md": {
-      "commit": "36c1f8f",
-      "source_sha256": "a98bef3fcf05c7167873780be83bfe355d232f490062c2a61db6d4594bfadc55",
-      "translated_at": "2026-03-16T08:43:46Z"
+      "commit": "2b2ae89",
+      "source_sha256": "adffeb6e53123b142acd2e38b46085ed357b99158d01730ba50875564bdb8ed8",
+      "translated_at": "2026-03-26T23:19:25Z"
     },
     "coastfiles/README.md": {
-      "commit": "36c1f8f",
-      "source_sha256": "21ca2aaff498e4a04cc9e9305c1afe254ac32375c835b46517df6cf438734dc6",
-      "translated_at": "2026-03-16T08:43:46Z"
+      "commit": "2b2ae89",
+      "source_sha256": "f935908ea7ed49550499aa1b8db9c538db752c97c5dda3d5ff65c0efd085d05b",
+      "translated_at": "2026-03-26T23:19:25Z"
     },
     "coastfiles/SECRETS.md": {
       "commit": "3357381",
@@ -865,9 +875,9 @@
       "translated_at": "2026-03-23T06:47:35Z"
     },
     "concepts_and_terminology/FILESYSTEM.md": {
-      "commit": "85b1396",
-      "source_sha256": "8ef51c567a944f6c2e066b700c7278eca64656a050205f7f50f88cfd47409aea",
-      "translated_at": "2026-03-09T09:02:23Z"
+      "commit": "2b2ae89",
+      "source_sha256": "2620c6a6cb6bf922f0c579dffe1a9db97dfa328776d18d5328f2ac79e11a0011",
+      "translated_at": "2026-03-26T23:19:25Z"
     },
     "concepts_and_terminology/LOGS.md": {
       "commit": "3357381",
@@ -904,10 +914,15 @@
       "source_sha256": "3eacf8c2cd014603d5ad52d96dd0db8f0f8c6a5547f5674919a2a29e4b1d069e",
       "translated_at": "2026-02-28T12:52:18Z"
     },
+    "concepts_and_terminology/PRIVATE_PATHS.md": {
+      "commit": "2b2ae89",
+      "source_sha256": "d579a8e4ddec140ee15761e232196a154c98c49e8b6c8ac5e9c2277cf37c03a1",
+      "translated_at": "2026-03-26T23:19:25Z"
+    },
     "concepts_and_terminology/README.md": {
-      "commit": "dc5d0c8",
-      "source_sha256": "83e845e8f0330850af780ed44c68345b83445661bb552383a8efad392eb97a03",
-      "translated_at": "2026-03-20T07:40:29Z"
+      "commit": "2b2ae89",
+      "source_sha256": "62a8501af4ce702978f69d0ecdeb8d18cd449e4e1c4bfec15fc5dcdcc714515b",
+      "translated_at": "2026-03-26T23:19:25Z"
     },
     "concepts_and_terminology/REMOVE.md": {
       "commit": "dc5d0c8",
@@ -945,9 +960,9 @@
       "translated_at": "2026-02-28T12:52:18Z"
     },
     "doc_ordering.txt": {
-      "commit": "7605a21",
-      "source_sha256": "f67f01eedb34ef7607c0918729e72c09650d4353c633c36c694275983d34ffa2",
-      "translated_at": "2026-03-23T06:47:35Z"
+      "commit": "2b2ae89",
+      "source_sha256": "8d7b236e035a96e834ec5ae443f1db0d665b53750b7168a24f6ed05fd61d87b7",
+      "translated_at": "2026-03-26T23:19:25Z"
     },
     "harnesses/CLAUDE_CODE.md": {
       "commit": "8a556b7",
@@ -1080,16 +1095,16 @@
       "translated_at": "2026-03-05T00:05:49Z"
     },
     "skills_prompt.txt": {
-      "commit": "8a556b7",
-      "source_sha256": "035c22d6e5d79613923b2dfe2b4031af446de483735689e4f60273d881c52a75",
-      "translated_at": "2026-03-24T21:02:24Z"
+      "commit": "2b2ae89",
+      "source_sha256": "36f396f7296b38fbea5d88f27f025e5f134033bba40e83a643298acb3d2b1672",
+      "translated_at": "2026-03-26T23:19:25Z"
     }
   },
   "pt": {
     "GETTING_STARTED.md": {
-      "commit": "8a556b7",
-      "source_sha256": "2bab1924e458576b60653ab43111b06d10dbb323daaad69cee3ec0acc2964a92",
-      "translated_at": "2026-03-24T21:09:09Z"
+      "commit": "2b2ae89",
+      "source_sha256": "2f0b7c8b541cdeb3ffde05a19e2bb375d5c8c0acd3e1c77e75b030c6bc58f203",
+      "translated_at": "2026-03-26T23:23:16Z"
     },
     "README.md": {
       "commit": "8a556b7",
@@ -1137,14 +1152,14 @@
       "translated_at": "2026-02-28T13:04:30Z"
     },
     "coastfiles/PROJECT.md": {
-      "commit": "36c1f8f",
-      "source_sha256": "a98bef3fcf05c7167873780be83bfe355d232f490062c2a61db6d4594bfadc55",
-      "translated_at": "2026-03-16T08:46:06Z"
+      "commit": "2b2ae89",
+      "source_sha256": "adffeb6e53123b142acd2e38b46085ed357b99158d01730ba50875564bdb8ed8",
+      "translated_at": "2026-03-26T23:23:16Z"
     },
     "coastfiles/README.md": {
-      "commit": "36c1f8f",
-      "source_sha256": "21ca2aaff498e4a04cc9e9305c1afe254ac32375c835b46517df6cf438734dc6",
-      "translated_at": "2026-03-16T08:46:06Z"
+      "commit": "2b2ae89",
+      "source_sha256": "f935908ea7ed49550499aa1b8db9c538db752c97c5dda3d5ff65c0efd085d05b",
+      "translated_at": "2026-03-26T23:23:16Z"
     },
     "coastfiles/SECRETS.md": {
       "commit": "3357381",
@@ -1227,9 +1242,9 @@
       "translated_at": "2026-03-23T06:55:56Z"
     },
     "concepts_and_terminology/FILESYSTEM.md": {
-      "commit": "85b1396",
-      "source_sha256": "8ef51c567a944f6c2e066b700c7278eca64656a050205f7f50f88cfd47409aea",
-      "translated_at": "2026-03-09T09:06:35Z"
+      "commit": "2b2ae89",
+      "source_sha256": "2620c6a6cb6bf922f0c579dffe1a9db97dfa328776d18d5328f2ac79e11a0011",
+      "translated_at": "2026-03-26T23:23:16Z"
     },
     "concepts_and_terminology/LOGS.md": {
       "commit": "3357381",
@@ -1266,10 +1281,15 @@
       "source_sha256": "3eacf8c2cd014603d5ad52d96dd0db8f0f8c6a5547f5674919a2a29e4b1d069e",
       "translated_at": "2026-02-28T13:04:30Z"
     },
+    "concepts_and_terminology/PRIVATE_PATHS.md": {
+      "commit": "2b2ae89",
+      "source_sha256": "d579a8e4ddec140ee15761e232196a154c98c49e8b6c8ac5e9c2277cf37c03a1",
+      "translated_at": "2026-03-26T23:23:16Z"
+    },
     "concepts_and_terminology/README.md": {
-      "commit": "dc5d0c8",
-      "source_sha256": "83e845e8f0330850af780ed44c68345b83445661bb552383a8efad392eb97a03",
-      "translated_at": "2026-03-20T07:46:55Z"
+      "commit": "2b2ae89",
+      "source_sha256": "62a8501af4ce702978f69d0ecdeb8d18cd449e4e1c4bfec15fc5dcdcc714515b",
+      "translated_at": "2026-03-26T23:23:16Z"
     },
     "concepts_and_terminology/REMOVE.md": {
       "commit": "dc5d0c8",
@@ -1307,9 +1327,9 @@
       "translated_at": "2026-02-28T13:04:30Z"
     },
     "doc_ordering.txt": {
-      "commit": "7605a21",
-      "source_sha256": "f67f01eedb34ef7607c0918729e72c09650d4353c633c36c694275983d34ffa2",
-      "translated_at": "2026-03-23T06:55:56Z"
+      "commit": "2b2ae89",
+      "source_sha256": "8d7b236e035a96e834ec5ae443f1db0d665b53750b7168a24f6ed05fd61d87b7",
+      "translated_at": "2026-03-26T23:23:16Z"
     },
     "harnesses/CLAUDE_CODE.md": {
       "commit": "8a556b7",
@@ -1442,16 +1462,16 @@
       "translated_at": "2026-03-05T00:10:17Z"
     },
     "skills_prompt.txt": {
-      "commit": "8a556b7",
-      "source_sha256": "035c22d6e5d79613923b2dfe2b4031af446de483735689e4f60273d881c52a75",
-      "translated_at": "2026-03-24T21:09:09Z"
+      "commit": "2b2ae89",
+      "source_sha256": "36f396f7296b38fbea5d88f27f025e5f134033bba40e83a643298acb3d2b1672",
+      "translated_at": "2026-03-26T23:23:16Z"
     }
   },
   "ru": {
     "GETTING_STARTED.md": {
-      "commit": "8a556b7",
-      "source_sha256": "2bab1924e458576b60653ab43111b06d10dbb323daaad69cee3ec0acc2964a92",
-      "translated_at": "2026-03-24T21:05:59Z"
+      "commit": "2b2ae89",
+      "source_sha256": "2f0b7c8b541cdeb3ffde05a19e2bb375d5c8c0acd3e1c77e75b030c6bc58f203",
+      "translated_at": "2026-03-26T23:21:21Z"
     },
     "README.md": {
       "commit": "8a556b7",
@@ -1499,14 +1519,14 @@
       "translated_at": "2026-02-28T12:58:35Z"
     },
     "coastfiles/PROJECT.md": {
-      "commit": "36c1f8f",
-      "source_sha256": "a98bef3fcf05c7167873780be83bfe355d232f490062c2a61db6d4594bfadc55",
-      "translated_at": "2026-03-16T08:45:01Z"
+      "commit": "2b2ae89",
+      "source_sha256": "adffeb6e53123b142acd2e38b46085ed357b99158d01730ba50875564bdb8ed8",
+      "translated_at": "2026-03-26T23:21:21Z"
     },
     "coastfiles/README.md": {
-      "commit": "36c1f8f",
-      "source_sha256": "21ca2aaff498e4a04cc9e9305c1afe254ac32375c835b46517df6cf438734dc6",
-      "translated_at": "2026-03-16T08:45:01Z"
+      "commit": "2b2ae89",
+      "source_sha256": "f935908ea7ed49550499aa1b8db9c538db752c97c5dda3d5ff65c0efd085d05b",
+      "translated_at": "2026-03-26T23:21:21Z"
     },
     "coastfiles/SECRETS.md": {
       "commit": "3357381",
@@ -1589,9 +1609,9 @@
       "translated_at": "2026-03-23T06:51:54Z"
     },
     "concepts_and_terminology/FILESYSTEM.md": {
-      "commit": "85b1396",
-      "source_sha256": "8ef51c567a944f6c2e066b700c7278eca64656a050205f7f50f88cfd47409aea",
-      "translated_at": "2026-03-09T09:04:33Z"
+      "commit": "2b2ae89",
+      "source_sha256": "2620c6a6cb6bf922f0c579dffe1a9db97dfa328776d18d5328f2ac79e11a0011",
+      "translated_at": "2026-03-26T23:21:21Z"
     },
     "concepts_and_terminology/LOGS.md": {
       "commit": "3357381",
@@ -1628,10 +1648,15 @@
       "source_sha256": "3eacf8c2cd014603d5ad52d96dd0db8f0f8c6a5547f5674919a2a29e4b1d069e",
       "translated_at": "2026-02-28T12:58:35Z"
     },
+    "concepts_and_terminology/PRIVATE_PATHS.md": {
+      "commit": "2b2ae89",
+      "source_sha256": "d579a8e4ddec140ee15761e232196a154c98c49e8b6c8ac5e9c2277cf37c03a1",
+      "translated_at": "2026-03-26T23:21:21Z"
+    },
     "concepts_and_terminology/README.md": {
-      "commit": "dc5d0c8",
-      "source_sha256": "83e845e8f0330850af780ed44c68345b83445661bb552383a8efad392eb97a03",
-      "translated_at": "2026-03-20T07:43:48Z"
+      "commit": "2b2ae89",
+      "source_sha256": "62a8501af4ce702978f69d0ecdeb8d18cd449e4e1c4bfec15fc5dcdcc714515b",
+      "translated_at": "2026-03-26T23:21:21Z"
     },
     "concepts_and_terminology/REMOVE.md": {
       "commit": "dc5d0c8",
@@ -1669,9 +1694,9 @@
       "translated_at": "2026-02-28T12:58:35Z"
     },
     "doc_ordering.txt": {
-      "commit": "7605a21",
-      "source_sha256": "f67f01eedb34ef7607c0918729e72c09650d4353c633c36c694275983d34ffa2",
-      "translated_at": "2026-03-23T06:51:54Z"
+      "commit": "2b2ae89",
+      "source_sha256": "8d7b236e035a96e834ec5ae443f1db0d665b53750b7168a24f6ed05fd61d87b7",
+      "translated_at": "2026-03-26T23:21:21Z"
     },
     "harnesses/CLAUDE_CODE.md": {
       "commit": "8a556b7",
@@ -1804,16 +1829,16 @@
       "translated_at": "2026-03-05T00:08:04Z"
     },
     "skills_prompt.txt": {
-      "commit": "8a556b7",
-      "source_sha256": "035c22d6e5d79613923b2dfe2b4031af446de483735689e4f60273d881c52a75",
-      "translated_at": "2026-03-24T21:05:59Z"
+      "commit": "2b2ae89",
+      "source_sha256": "36f396f7296b38fbea5d88f27f025e5f134033bba40e83a643298acb3d2b1672",
+      "translated_at": "2026-03-26T23:21:21Z"
     }
   },
   "zh": {
     "GETTING_STARTED.md": {
-      "commit": "8a556b7",
-      "source_sha256": "2bab1924e458576b60653ab43111b06d10dbb323daaad69cee3ec0acc2964a92",
-      "translated_at": "2026-03-24T20:55:10Z"
+      "commit": "2b2ae89",
+      "source_sha256": "2f0b7c8b541cdeb3ffde05a19e2bb375d5c8c0acd3e1c77e75b030c6bc58f203",
+      "translated_at": "2026-03-26T23:15:17Z"
     },
     "README.md": {
       "commit": "8a556b7",
@@ -1861,14 +1886,14 @@
       "translated_at": "2026-02-28T12:39:25Z"
     },
     "coastfiles/PROJECT.md": {
-      "commit": "36c1f8f",
-      "source_sha256": "a98bef3fcf05c7167873780be83bfe355d232f490062c2a61db6d4594bfadc55",
-      "translated_at": "2026-03-16T08:41:17Z"
+      "commit": "2b2ae89",
+      "source_sha256": "adffeb6e53123b142acd2e38b46085ed357b99158d01730ba50875564bdb8ed8",
+      "translated_at": "2026-03-26T23:15:17Z"
     },
     "coastfiles/README.md": {
-      "commit": "36c1f8f",
-      "source_sha256": "21ca2aaff498e4a04cc9e9305c1afe254ac32375c835b46517df6cf438734dc6",
-      "translated_at": "2026-03-16T08:41:17Z"
+      "commit": "2b2ae89",
+      "source_sha256": "f935908ea7ed49550499aa1b8db9c538db752c97c5dda3d5ff65c0efd085d05b",
+      "translated_at": "2026-03-26T23:15:17Z"
     },
     "coastfiles/SECRETS.md": {
       "commit": "3357381",
@@ -1951,9 +1976,9 @@
       "translated_at": "2026-03-23T06:38:20Z"
     },
     "concepts_and_terminology/FILESYSTEM.md": {
-      "commit": "85b1396",
-      "source_sha256": "8ef51c567a944f6c2e066b700c7278eca64656a050205f7f50f88cfd47409aea",
-      "translated_at": "2026-03-09T08:57:57Z"
+      "commit": "2b2ae89",
+      "source_sha256": "2620c6a6cb6bf922f0c579dffe1a9db97dfa328776d18d5328f2ac79e11a0011",
+      "translated_at": "2026-03-26T23:15:17Z"
     },
     "concepts_and_terminology/LOGS.md": {
       "commit": "3357381",
@@ -1990,10 +2015,15 @@
       "source_sha256": "3eacf8c2cd014603d5ad52d96dd0db8f0f8c6a5547f5674919a2a29e4b1d069e",
       "translated_at": "2026-02-28T12:39:25Z"
     },
+    "concepts_and_terminology/PRIVATE_PATHS.md": {
+      "commit": "2b2ae89",
+      "source_sha256": "d579a8e4ddec140ee15761e232196a154c98c49e8b6c8ac5e9c2277cf37c03a1",
+      "translated_at": "2026-03-26T23:15:17Z"
+    },
     "concepts_and_terminology/README.md": {
-      "commit": "dc5d0c8",
-      "source_sha256": "83e845e8f0330850af780ed44c68345b83445661bb552383a8efad392eb97a03",
-      "translated_at": "2026-03-20T07:32:44Z"
+      "commit": "2b2ae89",
+      "source_sha256": "62a8501af4ce702978f69d0ecdeb8d18cd449e4e1c4bfec15fc5dcdcc714515b",
+      "translated_at": "2026-03-26T23:15:17Z"
     },
     "concepts_and_terminology/REMOVE.md": {
       "commit": "dc5d0c8",
@@ -2031,9 +2061,9 @@
       "translated_at": "2026-02-28T12:39:25Z"
     },
     "doc_ordering.txt": {
-      "commit": "7605a21",
-      "source_sha256": "f67f01eedb34ef7607c0918729e72c09650d4353c633c36c694275983d34ffa2",
-      "translated_at": "2026-03-23T06:38:20Z"
+      "commit": "2b2ae89",
+      "source_sha256": "8d7b236e035a96e834ec5ae443f1db0d665b53750b7168a24f6ed05fd61d87b7",
+      "translated_at": "2026-03-26T23:15:17Z"
     },
     "harnesses/CLAUDE_CODE.md": {
       "commit": "8a556b7",
@@ -2166,9 +2196,9 @@
       "translated_at": "2026-03-05T00:01:09Z"
     },
     "skills_prompt.txt": {
-      "commit": "8a556b7",
-      "source_sha256": "035c22d6e5d79613923b2dfe2b4031af446de483735689e4f60273d881c52a75",
-      "translated_at": "2026-03-24T20:55:10Z"
+      "commit": "2b2ae89",
+      "source_sha256": "36f396f7296b38fbea5d88f27f025e5f134033bba40e83a643298acb3d2b1672",
+      "translated_at": "2026-03-26T23:15:17Z"
     }
   }
 }

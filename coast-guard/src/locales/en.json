@@ -547,6 +547,7 @@
   "docs.nav.agentShells": "Agent Shells",
   "docs.nav.mcpServers": "MCP Servers",
   "docs.nav.filesystem": "Filesystem",
+  "docs.nav.privatePaths": "Private Paths",
   "docs.nav.bareServices": "Bare Services",
   "docs.nav.mixedServiceTypes": "Mixed Service Types",
   "docs.nav.performanceOptimizations": "Performance Optimizations",

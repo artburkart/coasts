@@ -15,11 +15,12 @@ pub(super) fn health_poll_interval(elapsed: tokio::time::Duration) -> tokio::tim
     }
 }
 
-pub(super) struct CoastfileData {
+pub struct CoastfileData {
     pub assign: AssignConfig,
     pub worktree_dirs: Vec<String>,
     pub default_worktree_dir: String,
     pub has_compose: bool,
+    pub private_paths: Vec<String>,
 }
 
 fn coast_images_dir() -> std::path::PathBuf {
@@ -28,7 +29,7 @@ fn coast_images_dir() -> std::path::PathBuf {
         .join("images")
 }
 
-pub(super) fn load_coastfile_data(project: &str) -> CoastfileData {
+pub fn load_coastfile_data(project: &str) -> CoastfileData {
     let coastfile_path = coast_images_dir()
         .join(project)
         .join("latest")
@@ -40,6 +41,7 @@ pub(super) fn load_coastfile_data(project: &str) -> CoastfileData {
                 worktree_dirs: cf.worktree_dirs,
                 default_worktree_dir: cf.default_worktree_dir,
                 has_compose: cf.compose.is_some(),
+                private_paths: cf.private_paths,
             };
         }
     }
@@ -48,6 +50,7 @@ pub(super) fn load_coastfile_data(project: &str) -> CoastfileData {
         worktree_dirs: vec![".worktrees".to_string()],
         default_worktree_dir: ".worktrees".to_string(),
         has_compose: true,
+        private_paths: vec![],
     }
 }
 

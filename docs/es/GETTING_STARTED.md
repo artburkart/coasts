@@ -14,6 +14,12 @@ coast daemon install
 
 *Si decides no ejecutar `coast daemon install`, eres responsable de iniciar el daemon manualmente con `coast daemon start` cada vez.*
 
+> **Consejo:** Después de instalar Coasts con los comandos anteriores, puedes dejar que tu agente de programación se encargue de la configuración del proyecto. Copia el prompt de abajo y pégalo en un chat inicializado en el directorio raíz del proyecto que estás configurando.
+
+```prompt-copy
+installation_prompt.txt
+```
+
 ## Requisitos
 
 - macOS o Linux

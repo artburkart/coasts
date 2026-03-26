@@ -117,6 +117,28 @@ api = 8080
 
 これによりサブドメインルーティングと URL テンプレートがどのように有効になるかは、[Primary Port and DNS](../concepts_and_terminology/PRIMARY_PORT_AND_DNS.md) を参照してください。
 
+### `private_paths`
+
+Coast インスタンス間で共有するのではなく、インスタンスごとに分離したいワークスペース相対ディレクトリです。列挙された各パスには、コンテナ内のインスタンスごとのストレージディレクトリ（`/coast-private/`）から専用のバインドマウントが割り当てられます。
+
+```toml
+[coast]
+name = "my-app"
+private_paths = ["frontend/.next"]
+```
+
+これは、複数の Coast インスタンスがバインドマウントを通じて同じ基盤ファイルシステムを共有することで発生する競合を解決します。2 つのインスタンスが同じプロジェクトルートに対してどちらも `next dev` を実行すると、2 つ目のインスタンスは 1 つ目の `.next/dev/lock` ファイルロックを見つけて起動を拒否します。`private_paths` を使うと、各インスタンスが独自の `.next` ディレクトリを持つため、ロックが衝突しません。
+
+同じ inode への同時書き込みが問題を引き起こす任意のディレクトリに `private_paths` を使用してください。たとえば、ファイルロック、ビルドキャッシュ、PID ファイル、またはツール固有の状態ディレクトリなどです。
+
+相対パスの配列を受け付けます。パスは絶対パスであってはならず、`..` を含んではならず、互いに重複していてもいけません（たとえば `frontend/.next` と `frontend/.next/cache` の両方を列挙するとエラーです）。完全な概念については [Private Paths](../concepts_and_terminology/PRIVATE_PATHS.md) を参照してください。
+
+```toml
+[coast]
+name = "my-app"
+private_paths = ["frontend/.next", ".turbo", "apps/web/.next"]
+```
+
 ## `[coast.setup]`
 
 Coast コンテナ自体をカスタマイズします。ツールのインストール、ビルド手順の実行、設定ファイルの生成などを行います。`[coast.setup]` 内のすべては DinD コンテナ内で実行されます（compose サービス内ではありません）。

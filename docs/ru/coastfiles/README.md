@@ -58,6 +58,7 @@ web = 3000
 [coast]
 name = "my-crm"
 runtime = "dind"
+private_paths = [".next"]
 
 [coast.setup]
 packages = ["nodejs", "npm"]
@@ -196,7 +197,7 @@ mount = "/data/db"
 
 | Page | Sections | What it covers |
 |------|----------|----------------|
-| [Project and Setup](PROJECT.md) | `[coast]`, `[coast.setup]` | Имя, путь к compose, runtime, каталог worktree, настройка контейнера |
+| [Project and Setup](PROJECT.md) | `[coast]`, `[coast.setup]` | Имя, путь к compose, runtime, каталог worktree, private paths, настройка контейнера |
 | [Worktree Directories](WORKTREE_DIR.md) | `worktree_dir`, `default_worktree_dir` | Локальные и внешние каталоги worktree, пути с тильдой, интеграция с Codex/Claude |
 | [Ports](PORTS.md) | `[ports]`, `[egress]` | Проброс портов, объявления egress, основной порт |
 | [Volumes](VOLUMES.md) | `[volumes.*]` | Стратегии томов: изолированные, общие и инициализированные из snapshot |

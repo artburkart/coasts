@@ -1989,3 +1989,124 @@ fn test_from_file_in_claude_worktree_resolves_repo_root() {
         "project_root should resolve to the repo root from .claude/worktrees/"
     );
 }
+
+// --- private_paths tests ---
+
+#[test]
+fn test_private_paths_parsed() {
+    let toml = r#"
+[coast]
+name = "my-app"
+private_paths = ["frontend/.next", ".cache"]
+"#;
+    let cf = Coastfile::parse(toml, Path::new("/tmp")).unwrap();
+    assert_eq!(cf.private_paths, vec!["frontend/.next", ".cache"]);
+}
+
+#[test]
+fn test_private_paths_defaults_to_empty() {
+    let toml = r#"
+[coast]
+name = "my-app"
+"#;
+    let cf = Coastfile::parse(toml, Path::new("/tmp")).unwrap();
+    assert!(cf.private_paths.is_empty());
+}
+
+#[test]
+fn test_private_paths_rejects_absolute() {
+    let toml = r#"
+[coast]
+name = "my-app"
+private_paths = ["/var/cache"]
+"#;
+    let err = Coastfile::parse(toml, Path::new("/tmp")).unwrap_err();
+    assert!(
+        err.to_string().contains("must be a relative path"),
+        "got: {}",
+        err
+    );
+}
+
+#[test]
+fn test_private_paths_rejects_dotdot() {
+    let toml = r#"
+[coast]
+name = "my-app"
+private_paths = ["../outside"]
+"#;
+    let err = Coastfile::parse(toml, Path::new("/tmp")).unwrap_err();
+    assert!(
+        err.to_string().contains("must not contain '..'"),
+        "got: {}",
+        err
+    );
+}
+
+#[test]
+fn test_private_paths_rejects_nested() {
+    let toml = r#"
+[coast]
+name = "my-app"
+private_paths = ["frontend/.next", "frontend/.next/cache"]
+"#;
+    let err = Coastfile::parse(toml, Path::new("/tmp")).unwrap_err();
+    assert!(err.to_string().contains("overlap"), "got: {}", err);
+}
+
+#[test]
+fn test_private_paths_rejects_empty_entry() {
+    let toml = r#"
+[coast]
+name = "my-app"
+private_paths = [""]
+"#;
+    let err = Coastfile::parse(toml, Path::new("/tmp")).unwrap_err();
+    assert!(err.to_string().contains("cannot be empty"), "got: {}", err);
+}
+
+#[test]
+fn test_private_paths_serialized_and_roundtrips() {
+    let toml = r#"
+[coast]
+name = "my-app"
+private_paths = ["frontend/.next", ".turbo"]
+"#;
+    let cf = Coastfile::parse(toml, Path::new("/tmp")).unwrap();
+    let serialized = cf.to_standalone_toml();
+    assert!(serialized.contains("private_paths"));
+    assert!(serialized.contains("frontend/.next"));
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("coastfile.toml");
+    std::fs::write(&path, &serialized).unwrap();
+    let reparsed = Coastfile::from_file(&path).unwrap();
+    assert_eq!(reparsed.private_paths, vec!["frontend/.next", ".turbo"]);
+}
+
+#[test]
+fn test_build_private_paths_mount_commands_empty() {
+    let cmd = Coastfile::build_private_paths_mount_commands(&[]);
+    assert!(cmd.is_empty());
+}
+
+#[test]
+fn test_build_private_paths_mount_commands_single() {
+    let paths = vec!["frontend/.next".to_string()];
+    let cmd = Coastfile::build_private_paths_mount_commands(&paths);
+    assert!(cmd.starts_with(" && "));
+    assert!(cmd.contains("mkdir -p '/coast-private/frontend/.next' '/workspace/frontend/.next'"));
+    assert!(
+        cmd.contains("mount --bind '/coast-private/frontend/.next' '/workspace/frontend/.next'")
+    );
+}
+
+#[test]
+fn test_build_private_paths_mount_commands_multiple() {
+    let paths = vec!["frontend/.next".to_string(), ".turbo".to_string()];
+    let cmd = Coastfile::build_private_paths_mount_commands(&paths);
+    assert!(cmd.contains("/coast-private/frontend/.next"));
+    assert!(cmd.contains("/coast-private/.turbo"));
+    let bind_count = cmd.matches("mount --bind").count();
+    assert_eq!(bind_count, 2);
+}

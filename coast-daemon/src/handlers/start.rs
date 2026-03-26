@@ -94,9 +94,15 @@ async fn verify_inner_daemon_health(
 }
 
 /// Build the shell command to re-apply the `/workspace` bind mount.
-fn build_workspace_mount_command(mount_src: &str, symlink_fix: &str) -> String {
+fn build_workspace_mount_command(
+    mount_src: &str,
+    symlink_fix: &str,
+    private_paths: &[String],
+) -> String {
+    let private_cmds =
+        coast_core::coastfile::Coastfile::build_private_paths_mount_commands(private_paths);
     format!(
-        "mkdir -p /workspace && mount --bind {mount_src} /workspace && mount --make-rshared /workspace{symlink_fix}"
+        "mkdir -p /workspace && mount --bind {mount_src} /workspace && mount --make-rshared /workspace{symlink_fix}{private_cmds}"
     )
 }
 
@@ -145,6 +151,9 @@ async fn reapply_workspace_mount(
     name: &str,
 ) {
     let mount_src = compute_start_mount_src(project, worktree_name, parsed_coastfile);
+    let private_paths = parsed_coastfile
+        .map(|cf| cf.private_paths.as_slice())
+        .unwrap_or(&[]);
     let home = dirs::home_dir().unwrap_or_default();
     let project_dir = home.join(".coast").join("images").join(project);
     let manifest_path = project_dir.join("latest").join("manifest.json");
@@ -164,7 +173,7 @@ async fn reapply_workspace_mount(
     } else {
         String::new()
     };
-    let mount_cmd = build_workspace_mount_command(&mount_src, &symlink_fix);
+    let mount_cmd = build_workspace_mount_command(&mount_src, &symlink_fix, private_paths);
     match rt
         .exec_in_coast(container_id, &["sh", "-c", &mount_cmd])
         .await
@@ -955,7 +964,7 @@ mod tests {
 
     #[test]
     fn test_build_workspace_mount_command_basic() {
-        let cmd = build_workspace_mount_command("/host-project", "");
+        let cmd = build_workspace_mount_command("/host-project", "", &[]);
         assert_eq!(
             cmd,
             "mkdir -p /workspace && mount --bind /host-project /workspace && mount --make-rshared /workspace"
@@ -965,10 +974,22 @@ mod tests {
     #[test]
     fn test_build_workspace_mount_command_with_symlink_fix() {
         let symlink_fix = " && mkdir -p '/home/user' && ln -sfn /host-project '/home/user/project'";
-        let cmd = build_workspace_mount_command("/host-project/.worktrees/feat", symlink_fix);
+        let cmd = build_workspace_mount_command("/host-project/.worktrees/feat", symlink_fix, &[]);
         assert!(cmd.contains("mount --bind /host-project/.worktrees/feat /workspace"));
         assert!(cmd.contains("mkdir -p '/home/user'"));
         assert!(cmd.contains("ln -sfn /host-project '/home/user/project'"));
+    }
+
+    #[test]
+    fn test_build_workspace_mount_command_with_private_paths() {
+        let private = vec!["frontend/.next".to_string()];
+        let cmd = build_workspace_mount_command("/host-project", "", &private);
+        assert!(cmd.contains("mount --make-rshared /workspace"));
+        assert!(
+            cmd.contains("mkdir -p '/coast-private/frontend/.next' '/workspace/frontend/.next'")
+        );
+        assert!(cmd
+            .contains("mount --bind '/coast-private/frontend/.next' '/workspace/frontend/.next'"));
     }
 
     // --- start_bare_services_if_present tests ---

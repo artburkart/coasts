@@ -55,6 +55,7 @@ const DOC_TITLE_KEYS: Record<string, string> = {
   'concepts_and_terminology/AGENT_SHELLS.md': 'docs.nav.agentShells',
   'concepts_and_terminology/MCP_SERVERS.md': 'docs.nav.mcpServers',
   'concepts_and_terminology/FILESYSTEM.md': 'docs.nav.filesystem',
+  'concepts_and_terminology/PRIVATE_PATHS.md': 'docs.nav.privatePaths',
   'concepts_and_terminology/BARE_SERVICES.md': 'docs.nav.bareServices',
   'concepts_and_terminology/MIXED_SERVICE_TYPES.md': 'docs.nav.mixedServiceTypes',
   'concepts_and_terminology/PERFORMANCE_OPTIMIZATIONS.md': 'docs.nav.performanceOptimizations',

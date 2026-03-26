@@ -82,6 +82,10 @@ pub(super) async fn provision_instance(
 
     connect_shared_network(state, &resources.shared_network, &container_id).await;
 
+    let private_paths = coast_core::coastfile::Coastfile::from_file(&coastfile_path)
+        .map(|cf| cf.private_paths)
+        .unwrap_or_default();
+
     let ctx = InstanceConfig {
         docker,
         validated,
@@ -96,6 +100,7 @@ pub(super) async fn provision_instance(
         secret_container_paths: &secret_container_paths,
         secret_files_for_exec: &secret_files_for_exec,
         progress,
+        private_paths,
     };
 
     normalize_inner_docker_socket_permissions(docker, &container_id).await;
@@ -124,6 +129,7 @@ struct InstanceConfig<'a> {
     secret_container_paths: &'a [String],
     secret_files_for_exec: &'a [(String, Vec<u8>)],
     progress: &'a tokio::sync::mpsc::Sender<BuildProgressEvent>,
+    private_paths: Vec<String>,
 }
 
 struct ContainerCreateContext<'a> {
@@ -204,7 +210,13 @@ async fn prepare_images(ctx: &InstanceConfig<'_>) {
 
 async fn prepare_runtime(ctx: &InstanceConfig<'_>) -> Result<()> {
     info!(instance = %ctx.req.name, "provision: preparing runtime");
-    bind_workspace(ctx.docker, ctx.container_id, &ctx.req.name).await;
+    bind_workspace(
+        ctx.docker,
+        ctx.container_id,
+        &ctx.req.name,
+        &ctx.private_paths,
+    )
+    .await;
     install_mcp_if_configured(ctx).await?;
     secrets::write_secret_files_via_exec(ctx.secret_files_for_exec, ctx.container_id, ctx.docker)
         .await;
@@ -902,13 +914,20 @@ async fn load_cached_images(
     );
 }
 
-async fn bind_workspace(docker: &bollard::Docker, container_id: &str, instance_name: &str) {
+async fn bind_workspace(
+    docker: &bollard::Docker,
+    container_id: &str,
+    instance_name: &str,
+    private_paths: &[String],
+) {
+    let private_cmds =
+        coast_core::coastfile::Coastfile::build_private_paths_mount_commands(private_paths);
+    let cmd = format!(
+        "mkdir -p /workspace && mount --bind /host-project /workspace && mount --make-rshared /workspace{private_cmds}"
+    );
     let mount_rt = coast_docker::dind::DindRuntime::with_client(docker.clone());
     let mount_result = mount_rt
-        .exec_in_coast(
-            container_id,
-            &["sh", "-c", "mkdir -p /workspace && mount --bind /host-project /workspace && mount --make-rshared /workspace"],
-        )
+        .exec_in_coast(container_id, &["sh", "-c", &cmd])
         .await;
     match mount_result {
         Ok(r) if r.success() => {

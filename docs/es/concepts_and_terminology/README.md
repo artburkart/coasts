@@ -6,6 +6,7 @@ Esta sección cubre los conceptos centrales y el vocabulario utilizados en todo 
 - [Run](RUN.md) — crear una nueva instancia de Coast a partir de la build más reciente, asignando opcionalmente un worktree.
 - [Remove](REMOVE.md) — desmantelar una instancia de Coast y su estado de runtime aislado cuando necesitas una recreación limpia o quieres apagar Coasts.
 - [Sistema de archivos](FILESYSTEM.md) — el montaje compartido entre el host y un Coast, agentes del lado del host y cambio de worktree.
+- [Rutas privadas](PRIVATE_PATHS.md) — aislamiento por instancia para rutas del espacio de trabajo que entran en conflicto entre montajes bind compartidos.
 - [Daemon de Coast](DAEMON.md) — el plano de control local `coastd` que ejecuta operaciones del ciclo de vida.
 - [CLI de Coast](CLI.md) — la interfaz de terminal para comandos, scripts y flujos de trabajo de agentes.
 - [Coastguard](COASTGUARD.md) — la UI web lanzada con `coast ui` para observabilidad y control.

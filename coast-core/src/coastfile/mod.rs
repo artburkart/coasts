@@ -76,6 +76,9 @@ pub struct Coastfile {
     pub services: Vec<BareServiceConfig>,
     /// Agent shell configuration (command auto-started when a coast runs).
     pub agent_shell: Option<AgentShellConfig>,
+    /// Workspace-relative paths that should be per-instance (not shared across Coast instances).
+    /// Each path gets its own bind mount from `/coast-private/` inside the container.
+    pub private_paths: Vec<String>,
 }
 
 /// Configuration for the `[agent_shell]` Coastfile section.
@@ -300,6 +303,7 @@ impl Coastfile {
             autostart: true,
             services: vec![],
             agent_shell: None,
+            private_paths: vec![],
         }
     }
 
@@ -525,6 +529,20 @@ impl Coastfile {
         let primary_port = raw.coast.primary_port.or(base.primary_port);
         Self::validate_primary_port(&primary_port, &ports)?;
 
+        let private_paths = match raw.coast.private_paths {
+            Some(layer_paths) => {
+                Self::validate_private_paths(&layer_paths)?;
+                let mut merged = base.private_paths;
+                for p in layer_paths {
+                    if !merged.contains(&p) {
+                        merged.push(p);
+                    }
+                }
+                merged
+            }
+            None => base.private_paths,
+        };
+
         Ok(Coastfile {
             name,
             compose,
@@ -549,6 +567,7 @@ impl Coastfile {
             autostart: raw.coast.autostart.unwrap_or(base.autostart),
             services,
             agent_shell,
+            private_paths,
         })
     }
 
@@ -580,6 +599,66 @@ impl Coastfile {
         for name in &unset.services {
             coastfile.services.retain(|s| s.name != *name);
         }
+    }
+
+    fn validate_private_paths(paths: &[String]) -> Result<()> {
+        for path in paths {
+            if path.is_empty() {
+                return Err(CoastError::coastfile(
+                    "private_paths entries cannot be empty",
+                ));
+            }
+            if Path::new(path).is_absolute() {
+                return Err(CoastError::coastfile(format!(
+                    "private_paths entry '{}' must be a relative path",
+                    path
+                )));
+            }
+            if Path::new(path)
+                .components()
+                .any(|c| matches!(c, std::path::Component::ParentDir))
+            {
+                return Err(CoastError::coastfile(format!(
+                    "private_paths entry '{}' must not contain '..'",
+                    path
+                )));
+            }
+        }
+        for (i, a) in paths.iter().enumerate() {
+            for b in &paths[i + 1..] {
+                let a_slash = format!("{}/", a.trim_end_matches('/'));
+                let b_slash = format!("{}/", b.trim_end_matches('/'));
+                if b_slash.starts_with(&a_slash) || a_slash.starts_with(&b_slash) {
+                    return Err(CoastError::coastfile(format!(
+                        "private_paths '{}' and '{}' overlap (nested private paths are not allowed)",
+                        a, b
+                    )));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Build shell commands to mount private paths inside a Coast container.
+    ///
+    /// Returns an empty string if there are no private paths.
+    /// Otherwise returns a `&&`-joined sequence of `mkdir -p` + `mount --bind`
+    /// commands that should be appended to the workspace mount command.
+    pub fn build_private_paths_mount_commands(private_paths: &[String]) -> String {
+        if private_paths.is_empty() {
+            return String::new();
+        }
+        let cmds: Vec<String> = private_paths
+            .iter()
+            .map(|p| {
+                let private = format!("{PRIVATE_PATHS_CONTAINER_DIR}/{p}");
+                let workspace = format!("/workspace/{p}");
+                format!(
+                    "mkdir -p '{private}' '{workspace}' && mount --bind '{private}' '{workspace}'"
+                )
+            })
+            .collect();
+        format!(" && {}", cmds.join(" && "))
     }
 
     fn validate_and_build(raw: RawCoastfile, project_root: &Path) -> Result<Self> {
@@ -679,6 +758,9 @@ impl Coastfile {
         let primary_port = raw.coast.primary_port;
         Self::validate_primary_port(&primary_port, &raw.ports)?;
 
+        let private_paths = raw.coast.private_paths.unwrap_or_default();
+        Self::validate_private_paths(&private_paths)?;
+
         Ok(Coastfile {
             name,
             compose,
@@ -713,9 +795,13 @@ impl Coastfile {
             autostart: raw.coast.autostart.unwrap_or(true),
             services,
             agent_shell,
+            private_paths,
         })
     }
 }
+
+/// Container path where per-instance private directories are stored.
+pub const PRIVATE_PATHS_CONTAINER_DIR: &str = "/coast-private";
 
 /// Container mount path prefix for external worktree directories.
 pub const EXTERNAL_WORKTREE_MOUNT_PREFIX: &str = "/host-external-wt";

@@ -22,7 +22,8 @@
 다음은 호스트에서 직접 실행하세요:
 - 린팅, 타입체킹, 포매팅
 - Git 작업
-- Playwright 및 브라우저 테스트
+- Playwright 및 브라우저 테스트(프로젝트에서 사용하는 경우) — 브라우저는 호스트에서 실행하고, Coast의 동적 포트 URL을 가리키도록 하세요(`coast lookup` 또는 `coast ports`에서 확인). Coast가 체크아웃된 상태라면 표준 포트(예: localhost:3000)도 동작하지만, 사용자가 달리 말하지 않는 한 동적 포트를 우선하세요.
+  `coast exec`를 통해 Coast 내부에서 Playwright를 실행하지 마세요.
 - 호스트 측 의존성 설치(npm install, pip install)
 - 파일 검색, 코드 생성, 정적 분석
 
@@ -31,7 +32,7 @@
   coast exec <instance> -- sh -c "cd <dir> && npm test"    # DB 필요
   coast exec <instance> --service <service>                # 서비스 셸
   npm run lint                                              # 호스트에서 충분
-  npx playwright test                                       # 호스트에서 충분
+  BASE_URL=http://localhost:62217 npx playwright test       # 호스트 — 동적 포트 사용
 
 ## Runtime feedback
 
@@ -138,9 +139,18 @@ Coast 동작과 관련해 불분명한 점이 있으면, 추측하기 전에 문
 - 타입체킹 (`tsc --noEmit`, `go vet`)
 - 포매팅 (`prettier`, `gofmt`)
 - Git 작업
-- Playwright 및 브라우저 테스트
+- Playwright 및 브라우저 테스트(프로젝트에서 사용하는 경우) — 브라우저는 호스트에서 실행하고, Coast의 동적 포트 URL을 가리키도록 하세요(`coast lookup` 또는 `coast ports`에서 확인). Coast가 체크아웃된 상태라면 표준 포트(예: localhost:3000)도 동작하지만, 사용자가 달리 말하지 않는 한 동적 포트를 우선하세요.
+  `coast exec`를 통해 Coast 내부에서 Playwright를 실행하지 마세요.
 - 정적 분석, 코드 생성
 - 패키지 설치 (`npm install`, `pip install`)
+
+예시 — Playwright는 동적 포트를 통해 프런트엔드에 접근합니다:
+
+  coast ports <instance>
+  # SERVICE    CANONICAL  DYNAMIC
+  # ★ web      3000       62217
+
+  BASE_URL=http://localhost:62217 npx playwright test   # 호스트, coast exec 아님
 
 ## Create and Assign
 

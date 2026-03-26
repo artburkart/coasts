@@ -92,6 +92,22 @@ If you use `[assign.rebuild_triggers]`, Coast also runs `git diff --name-only <p
 
 `coast unassign` reverts `/workspace` back to `/host-project` (the project root). `coast start` after a stop re-applies the correct mount based on whether the instance has an assigned worktree.
 
+## Private Paths
+
+Because every Coast instance bind-mounts the same host directory, they all share the same inodes on disk. This is the fundamental feature that makes instant file sync work — but it also means that file-level locks conflict across instances.
+
+Next.js 16, for example, acquires an exclusive `flock` on `.next/dev/lock` when the dev server starts. Since `flock` is an inode-level kernel lock, a second Coast instance trying to start `next dev` against the same project root sees the first instance's lock and exits immediately. The same problem applies to any tool that uses `flock`, `fcntl` locks, or PID files in the workspace.
+
+The `private_paths` Coastfile field solves this by giving each instance its own directory for specified paths. After mounting `/workspace` with shared propagation, Coast bind-mounts a per-instance directory from `/coast-private/` over each declared path:
+
+```text
+/workspace/frontend/.next  ←──mount──  /coast-private/frontend/.next
+```
+
+`/coast-private/` lives on the DinD container's own filesystem — not on the shared host mount — so each instance naturally gets separate inodes. The private path mounts are re-applied on `coast start`, `coast assign`, and `coast unassign`.
+
+For configuration details, see [`private_paths` in the Coastfile reference](../coastfiles/PROJECT.md) and the [Private Paths](PRIVATE_PATHS.md) concept page.
+
 ## All Mounts
 
 Every Coast container has these mounts:
@@ -99,6 +115,7 @@ Every Coast container has these mounts:
 | Path | Type | Access | Purpose |
 |---|---|---|---|
 | `/workspace` | bind mount (in-container) | RW | Project root or worktree. Switchable on assign. |
+| `/coast-private/*` | bind mount (in-container) | RW | Per-instance private directories for paths declared in `private_paths`. |
 | `/host-project` | Docker bind mount | RW | Raw project root. Fixed at container creation. |
 | `/image-cache` | Docker bind mount | RO | Pre-pulled OCI tarballs from `~/.coast/image-cache/`. |
 | `/coast-artifact` | Docker bind mount | RO | Build artifact with rewritten compose files. |

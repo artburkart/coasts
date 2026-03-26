@@ -496,6 +496,7 @@
   "docs.nav.agentShells": "Shells de Agente",
   "docs.nav.mcpServers": "Servidores MCP",
   "docs.nav.filesystem": "Sistema de Arquivos",
+  "docs.nav.privatePaths": "Caminhos Privados",
   "docs.nav.bareServices": "Serviços Bare",
   "docs.nav.mixedServiceTypes": "Tipos de Serviço Mistos",
   "docs.nav.performanceOptimizations": "Otimizações de Desempenho",

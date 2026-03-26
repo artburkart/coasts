@@ -58,6 +58,7 @@ web = 3000
 [coast]
 name = "my-crm"
 runtime = "dind"
+private_paths = [".next"]
 
 [coast.setup]
 packages = ["nodejs", "npm"]
@@ -196,7 +197,7 @@ mount = "/data/db"
 
 | 页面 | 节 | 覆盖内容 |
 |------|----------|----------------|
-| [项目与设置](PROJECT.md) | `[coast]`, `[coast.setup]` | 名称、compose 路径、运行时、worktree 目录、容器设置 |
+| [项目与设置](PROJECT.md) | `[coast]`, `[coast.setup]` | 名称、compose 路径、运行时、worktree 目录、私有路径、容器设置 |
 | [Worktree 目录](WORKTREE_DIR.md) | `worktree_dir`, `default_worktree_dir` | 本地和外部 worktree 目录、波浪线路径、Codex/Claude 集成 |
 | [端口](PORTS.md) | `[ports]`, `[egress]` | 端口转发、出口声明、主端口 |
 | [卷](VOLUMES.md) | `[volumes.*]` | 隔离、共享和快照播种的卷策略 |

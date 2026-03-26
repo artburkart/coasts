@@ -22,7 +22,8 @@
 直接在主机上运行:
 - Lint、类型检查、格式化
 - Git 操作
-- Playwright 和浏览器测试
+- Playwright 和浏览器测试（如果项目使用它们）——在主机上运行浏览器，并将其指向 Coast 的动态端口 URL（可从 `coast lookup` 或 `coast ports` 获取）。如果该 Coast 已 checkout，也可以使用规范端口（例如 localhost:3000），但除非用户另有说明，否则优先使用动态端口。
+  不要通过 `coast exec` 在 Coast 内运行 Playwright。
 - 安装主机侧依赖（npm install、pip install）
 - 文件搜索、代码生成、静态分析
 
@@ -31,7 +32,7 @@
   coast exec <instance> -- sh -c "cd <dir> && npm test"    # needs DB
   coast exec <instance> --service <service>                # service shell
   npm run lint                                              # host is fine
-  npx playwright test                                       # host is fine
+  BASE_URL=http://localhost:62217 npx playwright test       # host — use dynamic port
 
 ## Runtime feedback
 
@@ -131,7 +132,7 @@ description: Inspect and control Coast instances for the current checkout. Use
 
 主机与 Coast 共享文件系统。仅在需要容器内运行中的服务时才使用 `coast exec`。
 
-**在以下情况下使用 `coast exec` for:**
+**在以下情况下使用 `coast exec`:**
 - 集成测试、API 测试，以及任何需要数据库或服务的内容
 - 服务重启、compose 操作
 - 与仅存在于容器中的进程交互的命令
@@ -141,9 +142,18 @@ description: Inspect and control Coast instances for the current checkout. Use
 - 类型检查 (`tsc --noEmit`, `go vet`)
 - 格式化 (`prettier`, `gofmt`)
 - Git 操作
-- Playwright 和浏览器测试
+- Playwright 和浏览器测试（如果项目使用它们）——在主机上运行浏览器，并将其指向 Coast 的动态端口 URL（可从 `coast lookup` 或 `coast ports` 获取）。如果该 Coast 已 checkout，也可以使用规范端口（例如 localhost:3000），但除非用户另有说明，否则优先使用动态端口。
+  不要通过 `coast exec` 在 Coast 内运行 Playwright。
 - 静态分析、代码生成
 - 安装包 (`npm install`, `pip install`)
+
+示例——Playwright 通过动态端口访问前端:
+
+  coast ports <instance>
+  # SERVICE    CANONICAL  DYNAMIC
+  # ★ web      3000       62217
+
+  BASE_URL=http://localhost:62217 npx playwright test   # host, not coast exec
 
 ## Create and Assign
 

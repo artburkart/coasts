@@ -6,6 +6,7 @@
 - [Run](RUN.md) — 최신 빌드에서 새 Coast 인스턴스를 생성하며, 선택적으로 워크트리를 할당할 수 있습니다.
 - [Remove](REMOVE.md) — 깨끗하게 다시 생성해야 하거나 Coasts를 내려야 할 때 Coast 인스턴스와 그 격리된 런타임 상태를 제거합니다.
 - [Filesystem](FILESYSTEM.md) — 호스트와 Coast 사이의 공유 마운트, 호스트 측 에이전트, 워크트리 전환.
+- [Private Paths](PRIVATE_PATHS.md) — 공유 바인드 마운트 전반에서 충돌하는 워크스페이스 경로에 대한 인스턴스별 격리.
 - [Coast Daemon](DAEMON.md) — 라이프사이클 작업을 실행하는 로컬 `coastd` 컨트롤 플레인.
 - [Coast CLI](CLI.md) — 명령, 스크립트, 에이전트 워크플로를 위한 터미널 인터페이스.
 - [Coastguard](COASTGUARD.md) — 관측성과 제어를 위해 `coast ui`로 실행되는 웹 UI.

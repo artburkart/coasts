@@ -117,6 +117,28 @@ api = 8080
 
 参见 [Primary Port and DNS](../concepts_and_terminology/PRIMARY_PORT_AND_DNS.md)，了解这如何启用子域名路由和 URL 模板。
 
+### `private_paths`
+
+工作区中相对路径的目录，这些目录应当是每个实例独有的，而不是在多个 Coast 实例之间共享。每个列出的路径都会从容器内的每实例存储目录（`/coast-private/`）获得其自己的绑定挂载。
+
+```toml
+[coast]
+name = "my-app"
+private_paths = ["frontend/.next"]
+```
+
+这解决了由于多个 Coast 实例通过绑定挂载共享同一个底层文件系统而导致的冲突。当两个实例都针对同一个项目根目录运行 `next dev` 时，第二个实例会看到第一个实例的 `.next/dev/lock` 文件锁，并拒绝启动。使用 `private_paths` 后，每个实例都会获得自己独立的 `.next` 目录，因此这些锁不会发生冲突。
+
+对于任何因并发实例写入同一个 inode 而导致问题的目录，都可以使用 `private_paths`:文件锁、构建缓存、PID 文件，或特定工具的状态目录。
+
+接受相对路径数组。路径不能是绝对路径，不能包含 `..`，并且不能重叠（例如，同时列出 `frontend/.next` 和 `frontend/.next/cache` 会报错）。完整概念请参见 [Private Paths](../concepts_and_terminology/PRIVATE_PATHS.md)。
+
+```toml
+[coast]
+name = "my-app"
+private_paths = ["frontend/.next", ".turbo", "apps/web/.next"]
+```
+
 ## `[coast.setup]`
 
 自定义 Coast 容器本身——安装工具、运行构建步骤，以及生成配置文件。`[coast.setup]` 中的所有内容都在 DinD 容器内运行（不在你的 compose 服务内运行）。

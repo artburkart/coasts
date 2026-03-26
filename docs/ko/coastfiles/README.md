@@ -58,6 +58,7 @@ compose 파일이 없는 Next.js 앱입니다. Coast가 Node를 설치하고, `n
 [coast]
 name = "my-crm"
 runtime = "dind"
+private_paths = [".next"]
 
 [coast.setup]
 packages = ["nodejs", "npm"]
@@ -196,7 +197,7 @@ mount = "/data/db"
 
 | Page | Sections | What it covers |
 |------|----------|----------------|
-| [Project and Setup](PROJECT.md) | `[coast]`, `[coast.setup]` | 이름, compose 경로, 런타임, worktree 디렉터리, 컨테이너 설정 |
+| [Project and Setup](PROJECT.md) | `[coast]`, `[coast.setup]` | 이름, compose 경로, 런타임, worktree 디렉터리, private paths, 컨테이너 설정 |
 | [Worktree Directories](WORKTREE_DIR.md) | `worktree_dir`, `default_worktree_dir` | 로컬 및 외부 worktree 디렉터리, 틸드 경로, Codex/Claude 통합 |
 | [Ports](PORTS.md) | `[ports]`, `[egress]` | 포트 포워딩, egress 선언, 기본 포트 |
 | [Volumes](VOLUMES.md) | `[volumes.*]` | 격리, 공유, 스냅샷 시드 볼륨 전략 |

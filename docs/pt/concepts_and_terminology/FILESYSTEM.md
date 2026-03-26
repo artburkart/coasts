@@ -84,13 +84,29 @@ A worktree é criada no host em `{project_root}/.worktrees/{worktree_name}`. O n
 
 Se a worktree for nova, o Coast faz o bootstrap de arquivos selecionados ignorados pelo git a partir da raiz do projeto antes da remontagem. Ele enumera arquivos ignorados com `git ls-files --others --ignored --exclude-standard`, filtra diretórios comuns e pesados mais quaisquer `exclude_paths` configurados, e então usa `rsync --files-from` com `--link-dest` para criar hardlinks dos arquivos selecionados dentro da worktree. O Coast registra esse bootstrap em metadados internos da worktree e o pula em atribuições posteriores para a mesma worktree, a menos que você explicitamente o atualize com `coast assign --force-sync`.
 
-Dentro do contêiner, `/workspace` é lazy-unmounted e refeito apontando para o subdiretório da worktree em `/host-project/.worktrees/{branch_name}`. Essa remontagem é rápida — ela não recria o contêiner DinD nem reinicia o daemon Docker interno. Serviços do compose e serviços bare ainda podem ser recriados ou reiniciados após a remontagem para que seus bind mounts resolvam através do novo `/workspace`.
+Dentro do contêiner, `/workspace` é desmontado de forma preguiçosa e remontado apontando para o subdiretório da worktree em `/host-project/.worktrees/{branch_name}`. Essa remontagem é rápida — ela não recria o contêiner DinD nem reinicia o daemon Docker interno. Serviços do compose e serviços bare ainda podem ser recriados ou reiniciados após a remontagem para que seus bind mounts resolvam através do novo `/workspace`.
 
 Grandes diretórios de dependências como `node_modules` não fazem parte deste caminho genérico de bootstrap. Eles normalmente são tratados por meio de caches ou volumes específicos do serviço.
 
 Se você usar `[assign.rebuild_triggers]`, o Coast também executa `git diff --name-only <previous>..<worktree>` no host para decidir se um serviço marcado como `rebuild` pode ser rebaixado para `restart`. Veja [Assign and Unassign](ASSIGN.md) e [Performance Optimizations](PERFORMANCE_OPTIMIZATIONS.md) para os detalhes que afetam a latência do assign.
 
 `coast unassign` reverte `/workspace` de volta para `/host-project` (a raiz do projeto). `coast start` após um stop reaplica a montagem correta com base em se a instância tem uma worktree atribuída.
+
+## Caminhos Privados
+
+Como toda instância do Coast faz bind-mount do mesmo diretório do host, todas compartilham os mesmos inodes no disco. Esse é o recurso fundamental que faz a sincronização instantânea de arquivos funcionar — mas também significa que locks em nível de arquivo entram em conflito entre instâncias.
+
+O Next.js 16, por exemplo, adquire um `flock` exclusivo em `.next/dev/lock` quando o servidor de desenvolvimento inicia. Como `flock` é um lock de kernel em nível de inode, uma segunda instância do Coast tentando iniciar `next dev` contra a mesma raiz de projeto vê o lock da primeira instância e encerra imediatamente. O mesmo problema se aplica a qualquer ferramenta que use `flock`, locks `fcntl` ou arquivos PID no workspace.
+
+O campo `private_paths` do Coastfile resolve isso ao dar a cada instância seu próprio diretório para caminhos especificados. Depois de montar `/workspace` com propagação compartilhada, o Coast faz bind-mount de um diretório por instância vindo de `/coast-private/` sobre cada caminho declarado:
+
+```text
+/workspace/frontend/.next  ←──mount──  /coast-private/frontend/.next
+```
+
+`/coast-private/` vive no próprio sistema de arquivos do contêiner DinD — não na montagem compartilhada do host — então cada instância naturalmente obtém inodes separados. As montagens de caminhos privados são reaplicadas em `coast start`, `coast assign` e `coast unassign`.
+
+Para detalhes de configuração, veja [`private_paths` na referência do Coastfile](../coastfiles/PROJECT.md) e a página conceitual [Private Paths](PRIVATE_PATHS.md).
 
 ## Todas as Montagens
 
@@ -99,6 +115,7 @@ Todo contêiner do Coast tem estas montagens:
 | Path | Type | Access | Purpose |
 |---|---|---|---|
 | `/workspace` | bind mount (in-container) | RW | Raiz do projeto ou worktree. Alternável no assign. |
+| `/coast-private/*` | bind mount (in-container) | RW | Diretórios privados por instância para caminhos declarados em `private_paths`. |
 | `/host-project` | Docker bind mount | RW | Raiz bruta do projeto. Fixa na criação do contêiner. |
 | `/image-cache` | Docker bind mount | RO | Tarballs OCI pré-baixados de `~/.coast/image-cache/`. |
 | `/coast-artifact` | Docker bind mount | RO | Artefato de build com arquivos compose reescritos. |

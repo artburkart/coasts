@@ -511,6 +511,7 @@
   "docs.nav.agentShells": "エージェントシェル",
   "docs.nav.mcpServers": "MCP サーバー",
   "docs.nav.filesystem": "ファイルシステム",
+  "docs.nav.privatePaths": "プライベートパス",
   "docs.nav.bareServices": "ベアサービス",
   "docs.nav.mixedServiceTypes": "混合サービスタイプ",
   "docs.nav.performanceOptimizations": "パフォーマンス最適化",

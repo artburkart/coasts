@@ -112,6 +112,7 @@ pub(super) async fn run_docker_steps(p: DockerStepsParams<'_>) -> Result<()> {
         wt_spawn_t,
         assign_config: p.assign_config,
         progress: p.progress,
+        private_paths: &p.cf_data.private_paths,
     })
     .await?;
     done(p.progress, "Switching worktree").await;
@@ -812,6 +813,7 @@ struct SwitchWorktreeParams<'a> {
     wt_spawn_t: std::time::Instant,
     assign_config: &'a AssignConfig,
     progress: &'a tokio::sync::mpsc::Sender<BuildProgressEvent>,
+    private_paths: &'a [String],
 }
 
 async fn switch_worktree(p: SwitchWorktreeParams<'_>) -> Result<()> {
@@ -847,7 +849,14 @@ async fn switch_worktree(p: SwitchWorktreeParams<'_>) -> Result<()> {
         p.req.force_sync,
     )
     .await;
-    remount_workspace(p.rt, p.container_id, root, &loc.container_mount_src).await;
+    remount_workspace(
+        p.rt,
+        p.container_id,
+        root,
+        &loc.container_mount_src,
+        p.private_paths,
+    )
+    .await;
 
     let _ =
         p.state
@@ -1098,16 +1107,19 @@ async fn remount_workspace(
     container_id: &str,
     root: &std::path::Path,
     mount_src: &str,
+    private_paths: &[String],
 ) {
     let host_root = root.to_string_lossy();
     let parent = root
         .parent()
         .map(|p| p.to_string_lossy())
         .unwrap_or_default();
+    let private_cmds =
+        coast_core::coastfile::Coastfile::build_private_paths_mount_commands(private_paths);
     let mount_cmd = format!(
         "umount -l /workspace 2>/dev/null; mount --bind {mount_src} /workspace && \
          mount --make-rshared /workspace && \
-         mkdir -p '{parent}' && ln -sfn /host-project '{host_root}'"
+         mkdir -p '{parent}' && ln -sfn /host-project '{host_root}'{private_cmds}"
     );
     exec_and_log(
         rt,

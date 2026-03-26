@@ -179,10 +179,15 @@ pub async fn handle(
         )
         .await;
 
-        let mount_cmd =
-            "umount -l /workspace 2>/dev/null; mount --bind /host-project /workspace && mount --make-rshared /workspace";
+        let cf_data = super::assign::load_coastfile_data(&req.project);
+        let private_cmds = coast_core::coastfile::Coastfile::build_private_paths_mount_commands(
+            &cf_data.private_paths,
+        );
+        let mount_cmd = format!(
+            "umount -l /workspace 2>/dev/null; mount --bind /host-project /workspace && mount --make-rshared /workspace{private_cmds}"
+        );
         let mount_result = rt
-            .exec_in_coast(&container_id, &["sh", "-c", mount_cmd])
+            .exec_in_coast(&container_id, &["sh", "-c", &mount_cmd])
             .await;
         match &mount_result {
             Ok(r) if r.success() => {

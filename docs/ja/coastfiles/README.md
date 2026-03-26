@@ -58,6 +58,7 @@ compose ファイルなしの Next.js アプリです。Coast が Node をイン
 [coast]
 name = "my-crm"
 runtime = "dind"
+private_paths = [".next"]
 
 [coast.setup]
 packages = ["nodejs", "npm"]
@@ -196,7 +197,7 @@ mount = "/data/db"
 
 | Page | Sections | What it covers |
 |------|----------|----------------|
-| [Project and Setup](PROJECT.md) | `[coast]`, `[coast.setup]` | 名前、compose パス、ランタイム、worktree ディレクトリ、コンテナセットアップ |
+| [Project and Setup](PROJECT.md) | `[coast]`, `[coast.setup]` | 名前、compose パス、ランタイム、worktree ディレクトリ、private paths、コンテナセットアップ |
 | [Worktree Directories](WORKTREE_DIR.md) | `worktree_dir`, `default_worktree_dir` | ローカルおよび外部 worktree ディレクトリ、チルダパス、Codex/Claude 統合 |
 | [Ports](PORTS.md) | `[ports]`, `[egress]` | ポート転送、egress 宣言、プライマリポート |
 | [Volumes](VOLUMES.md) | `[volumes.*]` | 分離、共有、スナップショットシードのボリューム戦略 |

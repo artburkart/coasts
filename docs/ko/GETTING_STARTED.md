@@ -14,6 +14,12 @@ coast daemon install
 
 *`coast daemon install`을 실행하지 않기로 결정했다면, 매번 `coast daemon start`로 데몬을 수동으로 시작할 책임이 있습니다.*
 
+> **팁:** 위 명령으로 Coasts를 설치한 후에는 코딩 에이전트가 프로젝트 설정을 처리하도록 할 수 있습니다. 아래 프롬프트를 복사해, 설정하려는 프로젝트의 루트 디렉터리에서 초기화된 채팅에 붙여 넣으세요.
+
+```prompt-copy
+installation_prompt.txt
+```
+
 ## 요구 사항
 
 - macOS 또는 Linux

@@ -58,6 +58,7 @@ A Next.js app with no compose file. Coast installs Node, runs `npm install`, and
 [coast]
 name = "my-crm"
 runtime = "dind"
+private_paths = [".next"]
 
 [coast.setup]
 packages = ["nodejs", "npm"]
@@ -196,7 +197,7 @@ mount = "/data/db"
 
 | Page | Sections | What it covers |
 |------|----------|----------------|
-| [Project and Setup](PROJECT.md) | `[coast]`, `[coast.setup]` | Name, compose path, runtime, worktree dir, container setup |
+| [Project and Setup](PROJECT.md) | `[coast]`, `[coast.setup]` | Name, compose path, runtime, worktree dir, private paths, container setup |
 | [Worktree Directories](WORKTREE_DIR.md) | `worktree_dir`, `default_worktree_dir` | Local and external worktree dirs, tilde paths, Codex/Claude integration |
 | [Ports](PORTS.md) | `[ports]`, `[egress]` | Port forwarding, egress declarations, primary port |
 | [Volumes](VOLUMES.md) | `[volumes.*]` | Isolated, shared, and snapshot-seeded volume strategies |
