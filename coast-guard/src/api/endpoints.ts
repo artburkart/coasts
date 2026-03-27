@@ -448,12 +448,14 @@ export const api = {
     coastfileType?: string | null,
     forceRemoveDangling?: boolean,
     onProgress?: (event: BuildProgressEvent) => void,
+    branch?: string | null,
   ): Promise<{ complete?: unknown; error?: { error: string } }> {
     return consumeSSE<BuildProgressEvent, unknown>(
       '/api/v1/stream/run',
       {
         name,
         project,
+        branch: branch ?? undefined,
         worktree,
         build_id: buildId,
         coastfile_type: coastfileType,

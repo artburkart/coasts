@@ -11,6 +11,7 @@ interface CreateCoastModalProps {
   readonly builds?: readonly BuildSummary[];
   readonly worktrees: readonly string[];
   readonly occupiedWorktrees: ReadonlySet<string>;
+  readonly currentBranch?: string | null;
   readonly onCreated: (name: string, worktree: string | null) => void;
   readonly onError?: (msg: string) => void;
   readonly onClose: () => void;
@@ -22,7 +23,7 @@ const inputClass =
   'w-full h-9 px-3 text-sm rounded-md border border-[var(--border)] bg-[var(--surface-solid)] dark:bg-transparent text-main outline-none focus:border-[var(--primary)] placeholder:text-subtle-ui';
 
 export default function CreateCoastModal({
-  open, project, existingNames, builds = [], worktrees, occupiedWorktrees, onCreated, onError, onClose,
+  open, project, existingNames, builds = [], worktrees, occupiedWorktrees, currentBranch, onCreated, onError, onClose,
 }: CreateCoastModalProps) {
   const { t } = useTranslation();
   const [coastName, setCoastName] = useState('');
@@ -117,6 +118,7 @@ export default function CreateCoastModal({
         progressCount++;
         if (event.step === 'Queued' || progressCount >= 3) closeOnce();
       },
+      currentBranch,
     ).then((result) => {
       if (result.error) {
         const msg = result.error.error ?? JSON.stringify(result.error);

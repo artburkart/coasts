@@ -165,12 +165,21 @@ async fn resolve_branch(
         Ok(o) if o.status.success() => {
             let b = String::from_utf8_lossy(&o.stdout).trim().to_string();
             if b.is_empty() || b == "HEAD" {
+                warn!(project = %project, dir = %project_root.display(), "branch detection returned empty/HEAD, storing None");
                 None
             } else {
                 Some(b)
             }
         }
-        _ => None,
+        Ok(o) => {
+            let stderr = String::from_utf8_lossy(&o.stderr);
+            warn!(project = %project, dir = %project_root.display(), stderr = %stderr.trim(), "git branch detection failed");
+            None
+        }
+        Err(e) => {
+            warn!(project = %project, dir = %project_root.display(), error = %e, "git branch detection failed");
+            None
+        }
     }
 }
 
