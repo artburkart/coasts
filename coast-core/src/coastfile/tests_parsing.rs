@@ -2110,3 +2110,51 @@ fn test_build_private_paths_mount_commands_multiple() {
     let bind_count = cmd.matches("mount --bind").count();
     assert_eq!(bind_count, 2);
 }
+
+#[test]
+fn test_build_private_paths_unmount_commands_empty() {
+    let cmd = Coastfile::build_private_paths_unmount_commands(&[]);
+    assert!(cmd.is_empty());
+}
+
+#[test]
+fn test_build_private_paths_unmount_commands_single() {
+    let paths = vec!["frontend/.next".to_string()];
+    let cmd = Coastfile::build_private_paths_unmount_commands(&paths);
+    assert!(cmd.contains("find '/workspace/frontend/.next'"));
+    assert!(cmd.contains("fuser -k"));
+    assert!(cmd.contains("umount -l '/workspace/frontend/.next'"));
+    assert!(cmd.ends_with("; "));
+}
+
+#[test]
+fn test_build_private_paths_unmount_commands_multiple() {
+    let paths = vec!["frontend/.next".to_string(), ".turbo".to_string()];
+    let cmd = Coastfile::build_private_paths_unmount_commands(&paths);
+    assert!(cmd.contains("find '/workspace/frontend/.next'"));
+    assert!(cmd.contains("find '/workspace/.turbo'"));
+    let umount_count = cmd.matches("umount -l").count();
+    assert_eq!(umount_count, 2);
+    let umount_count = cmd.matches("umount -l").count();
+    assert_eq!(umount_count, 2);
+}
+
+#[test]
+fn test_unmount_commands_precede_mount_commands() {
+    let paths = vec!["data".to_string()];
+    let unmount = Coastfile::build_private_paths_unmount_commands(&paths);
+    let mount = Coastfile::build_private_paths_mount_commands(&paths);
+    let combined =
+        format!("{unmount}umount -l /workspace 2>/dev/null; mount --bind /new /workspace{mount}");
+    let fuser_pos = combined.find("find '/workspace/data'").unwrap();
+    let workspace_umount_pos = combined.find("umount -l /workspace 2>/dev/null").unwrap();
+    let mount_pos = combined.find("mount --bind '/coast-private/data'").unwrap();
+    assert!(
+        fuser_pos < workspace_umount_pos,
+        "fuser kill should come before workspace unmount"
+    );
+    assert!(
+        workspace_umount_pos < mount_pos,
+        "workspace unmount should come before private_paths remount"
+    );
+}

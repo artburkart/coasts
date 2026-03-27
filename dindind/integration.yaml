@@ -147,3 +147,7 @@ tests:
     script: integrated-examples/test_private_paths.sh
     status: pass
     cached_seconds: 79
+  test_private_paths_assign:
+    script: integrated-examples/test_private_paths_assign.sh
+    status: pass
+    cached_seconds: 86

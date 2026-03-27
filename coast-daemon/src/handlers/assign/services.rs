@@ -98,6 +98,7 @@ pub(super) async fn run_docker_steps(p: DockerStepsParams<'_>) -> Result<()> {
         p.progress,
     )
     .await;
+    crate::bare_services::stop_before_remount(p.docker, p.container_id).await;
     done(p.progress, "Stopping services").await;
 
     step(p.progress, "Switching worktree", 4).await;
@@ -1114,10 +1115,12 @@ async fn remount_workspace(
         .parent()
         .map(|p| p.to_string_lossy())
         .unwrap_or_default();
+    let unmount_private =
+        coast_core::coastfile::Coastfile::build_private_paths_unmount_commands(private_paths);
     let private_cmds =
         coast_core::coastfile::Coastfile::build_private_paths_mount_commands(private_paths);
     let mount_cmd = format!(
-        "umount -l /workspace 2>/dev/null; mount --bind {mount_src} /workspace && \
+        "{unmount_private}umount -l /workspace 2>/dev/null; mount --bind {mount_src} /workspace && \
          mount --make-rshared /workspace && \
          mkdir -p '{parent}' && ln -sfn /host-project '{host_root}'{private_cmds}"
     );

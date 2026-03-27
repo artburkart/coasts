@@ -1366,5 +1366,142 @@ COASTFILE_EOF
 
 setup_coast_private_paths
 
+# --- coast-private-paths-bare ---
+# Combines private_paths with bare services and assign to test that
+# private_paths overlays survive assign/unassign and bare services restart.
+
+setup_coast_private_paths_bare() {
+    local dir="$PROJECTS_DIR/coast-private-paths-bare"
+    echo "Setting up coast-private-paths-bare..."
+    mkdir -p "$dir"
+
+    rm -rf "$dir/.git" "$dir/.worktrees"
+
+    cat > "$dir/Coastfile" << 'COASTFILE_EOF'
+[coast]
+name = "coast-private-paths-bare"
+runtime = "dind"
+private_paths = ["data"]
+
+[coast.setup]
+packages = ["nodejs", "npm"]
+
+[services.web]
+command = "node server.js"
+port = 41000
+restart = "on-failure"
+
+[ports]
+web = 41000
+
+[assign]
+default = "restart"
+COASTFILE_EOF
+
+    cat > "$dir/server.js" << 'SERVERJS_EOF'
+const http = require("http");
+const fs = require("fs");
+const { spawn, execSync } = require("child_process");
+const PORT = process.env.PORT || 41000;
+const LOCK_PATH = "/workspace/data/app.lock";
+
+// Acquire a persistent flock at startup, mimicking Next.js .next/trace lock.
+// Spawns a background `flock -x <file> -c "sleep infinity"` that holds the
+// lock for the entire process lifetime. If the old server wasn't killed or
+// the private_paths overlay leaked, flock -n will fail.
+let lockHeld = false;
+let lockChild = null;
+try {
+  fs.mkdirSync("/workspace/data", { recursive: true });
+  // Non-blocking flock test: exit 0 if acquired, exit 1 if held
+  execSync(`flock -n "${LOCK_PATH}" true`, { stdio: "ignore" });
+  // If we get here, lock is available. Hold it persistently.
+  lockChild = spawn("flock", ["-x", LOCK_PATH, "-c", "sleep infinity"], {
+    stdio: "ignore", detached: false
+  });
+  lockHeld = true;
+  console.log("Acquired exclusive flock on " + LOCK_PATH);
+} catch (e) {
+  console.error("FLOCK FAILED: Could not acquire lock on " + LOCK_PATH);
+  console.error("This means a stale lock leaked across the workspace remount.");
+  // Server starts but reports lock failure
+}
+
+process.on("exit", () => { if (lockChild) lockChild.kill(); });
+
+const server = http.createServer((req, res) => {
+  if (req.url === "/health") {
+    res.writeHead(200); res.end("ok"); return;
+  }
+  if (req.url === "/lock-status") {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ lock_held: lockHeld, lock_path: LOCK_PATH }));
+    return;
+  }
+  res.writeHead(200, { "Content-Type": "application/json" });
+  res.end(JSON.stringify({ version: "main", branch: "main", lock_held: lockHeld }));
+});
+
+server.listen(PORT, () => console.log("main server on " + PORT));
+SERVERJS_EOF
+
+    cd "$dir"
+    git init -b main
+    git config user.name "Coast Dev"
+    git config user.email "dev@coasts.dev"
+    git add -A
+    git commit -m "initial commit: private-paths-bare main"
+
+    git checkout -b feature-v2
+
+    cat > "$dir/server.js" << 'SERVERJS_V2_EOF'
+const http = require("http");
+const fs = require("fs");
+const { spawn, execSync } = require("child_process");
+const PORT = process.env.PORT || 41000;
+const LOCK_PATH = "/workspace/data/app.lock";
+
+let lockHeld = false;
+let lockChild = null;
+try {
+  fs.mkdirSync("/workspace/data", { recursive: true });
+  execSync(`flock -n "${LOCK_PATH}" true`, { stdio: "ignore" });
+  lockChild = spawn("flock", ["-x", LOCK_PATH, "-c", "sleep infinity"], {
+    stdio: "ignore", detached: false
+  });
+  lockHeld = true;
+  console.log("Acquired exclusive flock on " + LOCK_PATH);
+} catch (e) {
+  console.error("FLOCK FAILED: Could not acquire lock on " + LOCK_PATH);
+  console.error("This means a stale lock leaked across the workspace remount.");
+}
+
+process.on("exit", () => { if (lockChild) lockChild.kill(); });
+
+const server = http.createServer((req, res) => {
+  if (req.url === "/health") {
+    res.writeHead(200); res.end("ok"); return;
+  }
+  if (req.url === "/lock-status") {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ lock_held: lockHeld, lock_path: LOCK_PATH }));
+    return;
+  }
+  res.writeHead(200, { "Content-Type": "application/json" });
+  res.end(JSON.stringify({ version: "v2", branch: "feature-v2", lock_held: lockHeld }));
+});
+
+server.listen(PORT, () => console.log("v2 server on " + PORT));
+SERVERJS_V2_EOF
+
+    git add -A
+    git commit -m "feature: v2 server"
+
+    git checkout main
+    echo "  coast-private-paths-bare ready (branches: main, feature-v2)"
+}
+
+setup_coast_private_paths_bare
+
 echo ""
 echo "All examples initialized. Run 'coast build' inside any example to get started."

@@ -179,12 +179,18 @@ pub async fn handle(
         )
         .await;
 
+        crate::bare_services::stop_before_remount(docker, &container_id).await;
+
         let cf_data = super::assign::load_coastfile_data(&req.project);
+        let unmount_private =
+            coast_core::coastfile::Coastfile::build_private_paths_unmount_commands(
+                &cf_data.private_paths,
+            );
         let private_cmds = coast_core::coastfile::Coastfile::build_private_paths_mount_commands(
             &cf_data.private_paths,
         );
         let mount_cmd = format!(
-            "umount -l /workspace 2>/dev/null; mount --bind /host-project /workspace && mount --make-rshared /workspace{private_cmds}"
+            "{unmount_private}umount -l /workspace 2>/dev/null; mount --bind /host-project /workspace && mount --make-rshared /workspace{private_cmds}"
         );
         let mount_result = rt
             .exec_in_coast(&container_id, &["sh", "-c", &mount_cmd])

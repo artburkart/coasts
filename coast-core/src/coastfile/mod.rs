@@ -661,6 +661,27 @@ impl Coastfile {
         format!(" && {}", cmds.join(" && "))
     }
 
+    /// Generate shell commands to unmount private_paths sub-mounts before a
+    /// workspace remount. For each private path, kill processes holding open
+    /// fds on files within that path (orphaned flock children), then
+    /// lazy-unmount the sub-mount.
+    pub fn build_private_paths_unmount_commands(private_paths: &[String]) -> String {
+        if private_paths.is_empty() {
+            return String::new();
+        }
+        let cmds: Vec<String> = private_paths
+            .iter()
+            .map(|p| {
+                format!(
+                    "find '/workspace/{p}' -type f -exec fuser -k {{}} \\; 2>/dev/null || true; \
+                     sleep 0.2; \
+                     umount -l '/workspace/{p}' 2>/dev/null || true"
+                )
+            })
+            .collect();
+        format!("{}; ", cmds.join("; "))
+    }
+
     fn validate_and_build(raw: RawCoastfile, project_root: &Path) -> Result<Self> {
         // Validate project name (required for standalone files)
         let name = raw.coast.name.unwrap_or_default();

@@ -164,8 +164,14 @@ fn stop_all_script(services: &[BareServiceConfig]) -> String {
             name = svc.name
         ));
     }
-    // Also kill any remaining wrapper shells and orphaned node processes
-    script.push_str("pkill -f 'coast-supervisor wrapper' 2>/dev/null || true\n");
+    // Kill any remaining supervisor wrappers (sh /coast-supervisor/<name>.sh)
+    // but NOT the stop/start scripts themselves
+    for svc in services {
+        script.push_str(&format!(
+            "pkill -f '/coast-supervisor/{name}.sh' 2>/dev/null || true\n",
+            name = svc.name
+        ));
+    }
     script.push_str("echo \"[coast-supervisor] all services stopped\"\n");
     script
 }
@@ -312,6 +318,26 @@ pub fn generate_install_and_start_command(services: &[BareServiceConfig]) -> Str
 /// Build the stop command.
 pub fn generate_stop_command() -> String {
     format!("sh {SUPERVISOR_DIR}/stop-all.sh")
+}
+
+/// Stop all bare services with a double-stop to catch wrapper respawns.
+///
+/// Used before workspace remounts to ensure held flocks on private_paths
+/// are released. Runs the stop script twice because `restart: on-failure`
+/// wrappers can respawn the service between the first kill and completion.
+pub async fn stop_before_remount(docker: &bollard::Docker, container_id: &str) {
+    if !has_bare_services(docker, container_id).await {
+        return;
+    }
+    let rt = coast_docker::dind::DindRuntime::with_client(docker.clone());
+    let stop_cmd = generate_stop_command();
+    let _ = rt
+        .exec_in_coast(container_id, &["sh", "-c", &stop_cmd])
+        .await;
+    let _ = rt
+        .exec_in_coast(container_id, &["sh", "-c", &stop_cmd])
+        .await;
+    tracing::info!("bare services stopped before workspace remount");
 }
 
 /// Build the start command (re-start after stop).
