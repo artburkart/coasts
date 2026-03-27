@@ -8,6 +8,7 @@ rust_i18n::i18n!("../coast-i18n/locales", fallback = "en");
 use std::sync::Arc;
 
 use clap::Parser;
+use nix::fcntl::{Flock, FlockArg};
 use tracing::{error, info, warn};
 use tracing_subscriber::EnvFilter;
 
@@ -230,6 +231,12 @@ async fn run_daemon(cli: Cli) -> Result<()> {
         None => server::default_socket_path()?,
     };
 
+    // Acquire exclusive flock to enforce single-instance.
+    // The lock is held for the lifetime of the process -- the kernel releases
+    // it automatically on exit (including SIGKILL/OOM).
+    let lock_path = coast_dir.join("coastd.lock");
+    let _lock_file = acquire_singleton_lock(&lock_path)?;
+
     // Determine PID file path
     let pid_path = server::default_pid_path()?;
 
@@ -310,6 +317,30 @@ async fn run_daemon(cli: Cli) -> Result<()> {
     server::remove_pid_file(&pid_path)?;
 
     result
+}
+
+/// Acquire an exclusive flock on `coastd.lock` to enforce single-instance.
+///
+/// Returns the `Flock<File>` guard. The caller MUST keep it alive for the
+/// entire daemon lifetime — dropping it releases the lock.
+fn acquire_singleton_lock(lock_path: &std::path::Path) -> Result<Flock<std::fs::File>> {
+    use coast_core::error::CoastError;
+
+    let lock_file = std::fs::File::create(lock_path).map_err(|e| CoastError::Io {
+        message: format!("failed to create lock file '{}': {e}", lock_path.display()),
+        path: lock_path.to_path_buf(),
+        source: Some(e),
+    })?;
+
+    let guard = Flock::lock(lock_file, FlockArg::LockExclusiveNonblock).map_err(|_| {
+        CoastError::io_simple(
+            "another coastd is already running. \
+             Use `coast daemon kill` to stop it, or `coast daemon restart` to replace it.",
+        )
+    })?;
+
+    info!(path = %lock_path.display(), "singleton lock acquired");
+    Ok(guard)
 }
 
 /// Background loop that keeps the shared services response cache warm.
@@ -1101,5 +1132,36 @@ mod tests {
         assert_eq!(updated.status, coast_core::types::InstanceStatus::Stopped);
         let allocs = db.get_port_allocations("proj-c", "stopped-co").unwrap();
         assert_eq!(allocs[0].socat_pid, Some(4_194_304));
+    }
+
+    #[test]
+    fn test_singleton_lock_succeeds() {
+        let tmp = tempfile::tempdir().unwrap();
+        let lock_path = tmp.path().join("coastd.lock");
+        let _lock = acquire_singleton_lock(&lock_path).unwrap();
+    }
+
+    #[test]
+    fn test_singleton_lock_rejects_second() {
+        let tmp = tempfile::tempdir().unwrap();
+        let lock_path = tmp.path().join("coastd.lock");
+        let _lock = acquire_singleton_lock(&lock_path).unwrap();
+        let result = acquire_singleton_lock(&lock_path);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("already running"),
+            "error should mention already running, got: {err}"
+        );
+    }
+
+    #[test]
+    fn test_singleton_lock_released_on_drop() {
+        let tmp = tempfile::tempdir().unwrap();
+        let lock_path = tmp.path().join("coastd.lock");
+        {
+            let _lock = acquire_singleton_lock(&lock_path).unwrap();
+        } // Flock<File> dropped here, releasing the lock
+        let _lock2 = acquire_singleton_lock(&lock_path).unwrap();
     }
 }

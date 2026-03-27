@@ -113,6 +113,10 @@ tests:
     script: integrated-examples/test_update.sh
     status: pass
     cached_seconds: 44
+  test_coastd_process_singleton:
+    script: integrated-examples/test_coastd_process_singleton.sh
+    status: pass
+    cached_seconds: 57
   test_sync:
     script: integrated-examples/test_sync.sh
     status: pass
