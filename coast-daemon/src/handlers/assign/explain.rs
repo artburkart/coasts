@@ -152,9 +152,13 @@ pub async fn handle_explain(
     let (worktree_exists, worktree_synced) = if let Some(ref root) = project_root {
         use coast_core::coastfile::Coastfile;
 
-        let wt_path = detect_worktree_dir_from_git(root)
-            .map(|d| root.join(&d).join(&req.worktree))
-            .filter(|p| p.exists())
+        let wt_path = find_worktree_path_by_branch(root, &req.worktree)
+            .await
+            .or_else(|| {
+                detect_worktree_dir_from_git(root)
+                    .map(|d| root.join(&d).join(&req.worktree))
+                    .filter(|p| p.exists())
+            })
             .or_else(|| {
                 cf_data.worktree_dirs.iter().find_map(|d| {
                     let resolved = Coastfile::resolve_worktree_dir(root, d);
@@ -207,6 +211,47 @@ pub async fn handle_explain(
         has_bare_install,
         changed_files_count: changed_files.len(),
     })
+}
+
+/// Find the on-disk path of an existing worktree by matching its branch name
+/// via `git worktree list --porcelain`. This handles the case where the
+/// directory name doesn't match the branch name (e.g. `.claude/worktrees/foo`
+/// for branch `worktree-foo`).
+async fn find_worktree_path_by_branch(
+    project_root: &std::path::Path,
+    branch_name: &str,
+) -> Option<std::path::PathBuf> {
+    let output = tokio::process::Command::new("git")
+        .args(["worktree", "list", "--porcelain"])
+        .current_dir(project_root)
+        .output()
+        .await
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let canonical_root = project_root.canonicalize().ok()?;
+
+    let mut current_path: Option<std::path::PathBuf> = None;
+    for line in stdout.lines() {
+        if let Some(path_str) = line.strip_prefix("worktree ") {
+            current_path = Some(std::path::PathBuf::from(path_str));
+        } else if let Some(branch_ref) = line.strip_prefix("branch ") {
+            if let Some(ref wt_path) = current_path {
+                let name = branch_ref.strip_prefix("refs/heads/").unwrap_or(branch_ref);
+                if name == branch_name {
+                    let canonical = wt_path.canonicalize().unwrap_or_else(|_| wt_path.clone());
+                    if canonical != canonical_root {
+                        return Some(canonical);
+                    }
+                }
+            }
+        } else if line.is_empty() {
+            current_path = None;
+        }
+    }
+    None
 }
 
 #[cfg(test)]

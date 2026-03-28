@@ -108,24 +108,39 @@ async fn handle_logs_socket(
     let has_bare = crate::bare_services::has_bare_services(docker, &container_id).await;
     let has_compose = crate::handlers::assign::has_compose(&params.project);
 
-    // In mixed mode with a service filter, route to the right log source
-    let use_bare = if has_bare && has_compose {
-        if let Some(ref service) = params.service {
-            let runtime = coast_docker::dind::DindRuntime::with_client(docker.clone());
-            let log_path = format!("{}/{}.log", crate::bare_services::LOG_DIR, service);
-            runtime
-                .exec_in_coast(&container_id, &["test", "-f", &log_path])
-                .await
-                .map(|r| r.success())
-                .unwrap_or(false)
+    let cmd_parts = if has_bare && has_compose && params.service.is_none() {
+        // Mixed mode, no service filter: merge both log streams in parallel
+        let bare_cmd = crate::bare_services::generate_logs_command(None, None, false, true);
+        let compose_script = compose_context(&params.project)
+            .compose_script("logs --tail 200 --follow");
+        vec![
+            "sh".to_string(),
+            "-c".to_string(),
+            format!("({bare_cmd}) & ({compose_script}) & wait"),
+        ]
+    } else if has_bare && has_compose {
+        // Mixed mode with a service filter: route to the right log source
+        let service = params.service.as_deref().unwrap();
+        let runtime = coast_docker::dind::DindRuntime::with_client(docker.clone());
+        let log_path = format!("{}/{}.log", crate::bare_services::LOG_DIR, service);
+        let is_bare_svc = runtime
+            .exec_in_coast(&container_id, &["test", "-f", &log_path])
+            .await
+            .map(|r| r.success())
+            .unwrap_or(false);
+        if is_bare_svc {
+            let tail_cmd = crate::bare_services::generate_logs_command(
+                Some(service),
+                None,
+                false,
+                true,
+            );
+            vec!["sh".to_string(), "-c".to_string(), tail_cmd]
         } else {
-            false
+            let ctx = compose_context(&params.project);
+            ctx.compose_shell(&format!("logs --tail 200 --follow {service}"))
         }
-    } else {
-        has_bare && !has_compose
-    };
-
-    let cmd_parts = if use_bare {
+    } else if has_bare {
         let tail_cmd = crate::bare_services::generate_logs_command(
             params.service.as_deref(),
             None,

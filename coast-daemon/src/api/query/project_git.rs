@@ -105,9 +105,8 @@ fn load_worktree_dirs_from_live_or_cached(
         return cf.worktree_dirs;
     }
 
-    let home = dirs::home_dir().unwrap_or_default();
-    let cached_path = home
-        .join(".coast")
+    let cached_path = coast_core::artifact::coast_home()
+        .unwrap_or_else(|_| dirs::home_dir().unwrap_or_default().join(".coast"))
         .join("images")
         .join(project)
         .join("latest")
@@ -220,8 +219,8 @@ fn detached_worktree_name(
 }
 
 pub(crate) fn resolve_project_root(project: &str) -> Option<PathBuf> {
-    let home = dirs::home_dir()?;
-    let project_dir = home.join(".coast").join("images").join(project);
+    let coast_dir = coast_core::artifact::coast_home().ok()?;
+    let project_dir = coast_dir.join("images").join(project);
     let manifest_path = project_dir.join("latest").join("manifest.json");
     let content = std::fs::read_to_string(manifest_path).ok()?;
     let manifest: serde_json::Value = serde_json::from_str(&content).ok()?;

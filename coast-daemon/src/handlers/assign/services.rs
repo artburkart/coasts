@@ -2,7 +2,7 @@ use tracing::{info, warn};
 
 use coast_core::error::{CoastError, Result};
 use coast_core::protocol::{AssignRequest, BuildProgressEvent};
-use coast_core::types::{AssignAction, AssignConfig, InstanceStatus};
+use coast_core::types::{AssignAction, AssignConfig, BareServiceConfig, InstanceStatus};
 use coast_docker::runtime::Runtime;
 
 use crate::server::AppState;
@@ -98,7 +98,13 @@ pub(super) async fn run_docker_steps(p: DockerStepsParams<'_>) -> Result<()> {
         p.progress,
     )
     .await;
-    crate::bare_services::stop_before_remount(p.docker, p.container_id).await;
+    let bare_svc_list = {
+        let cf_path = resolve_coastfile_path(&p.req.project, p.instance_build_id);
+        coast_core::coastfile::Coastfile::from_file(&cf_path)
+            .map(|cf| cf.services)
+            .unwrap_or_default()
+    };
+    crate::bare_services::stop_before_remount(p.docker, p.container_id, &bare_svc_list).await;
     done(p.progress, "Stopping services").await;
 
     step(p.progress, "Switching worktree", 4).await;
@@ -114,6 +120,7 @@ pub(super) async fn run_docker_steps(p: DockerStepsParams<'_>) -> Result<()> {
         assign_config: p.assign_config,
         progress: p.progress,
         private_paths: &p.cf_data.private_paths,
+        bare_services: &bare_svc_list,
     })
     .await?;
     done(p.progress, "Switching worktree").await;
@@ -815,6 +822,7 @@ struct SwitchWorktreeParams<'a> {
     assign_config: &'a AssignConfig,
     progress: &'a tokio::sync::mpsc::Sender<BuildProgressEvent>,
     private_paths: &'a [String],
+    bare_services: &'a [BareServiceConfig],
 }
 
 async fn switch_worktree(p: SwitchWorktreeParams<'_>) -> Result<()> {
@@ -856,6 +864,7 @@ async fn switch_worktree(p: SwitchWorktreeParams<'_>) -> Result<()> {
         root,
         &loc.container_mount_src,
         p.private_paths,
+        p.bare_services,
     )
     .await;
 
@@ -1109,20 +1118,27 @@ async fn remount_workspace(
     root: &std::path::Path,
     mount_src: &str,
     private_paths: &[String],
+    bare_services: &[BareServiceConfig],
 ) {
     let host_root = root.to_string_lossy();
     let parent = root
         .parent()
         .map(|p| p.to_string_lossy())
         .unwrap_or_default();
+    let unmount_cache =
+        coast_core::coastfile::Coastfile::build_cache_unmount_commands(bare_services);
     let unmount_private =
         coast_core::coastfile::Coastfile::build_private_paths_unmount_commands(private_paths);
+    let clear_private =
+        coast_core::coastfile::Coastfile::build_private_paths_clear_commands(private_paths);
     let private_cmds =
         coast_core::coastfile::Coastfile::build_private_paths_mount_commands(private_paths);
+    let cache_cmds =
+        coast_core::coastfile::Coastfile::build_cache_mount_commands(bare_services);
     let mount_cmd = format!(
-        "{unmount_private}umount -l /workspace 2>/dev/null; mount --bind {mount_src} /workspace && \
+        "{unmount_cache}{unmount_private}{clear_private}umount -l /workspace 2>/dev/null; mount --bind {mount_src} /workspace && \
          mount --make-rshared /workspace && \
-         mkdir -p '{parent}' && ln -sfn /host-project '{host_root}'{private_cmds}"
+         mkdir -p '{parent}' && ln -sfn /host-project '{host_root}'{private_cmds}{cache_cmds}"
     );
     exec_and_log(
         rt,
@@ -1210,10 +1226,11 @@ async fn compose_down_up(
 }
 
 fn resolve_coastfile_path(project: &str, build_id: Option<&str>) -> std::path::PathBuf {
-    let home = dirs::home_dir().unwrap_or_default();
+    let coast_dir = coast_core::artifact::coast_home()
+        .unwrap_or_else(|_| dirs::home_dir().unwrap_or_default().join(".coast"));
     build_id
         .map(|bid| {
-            home.join(".coast")
+            coast_dir
                 .join("images")
                 .join(project)
                 .join(bid)
@@ -1221,7 +1238,7 @@ fn resolve_coastfile_path(project: &str, build_id: Option<&str>) -> std::path::P
         })
         .filter(|p| p.exists())
         .unwrap_or_else(|| {
-            home.join(".coast")
+            coast_dir
                 .join("images")
                 .join(project)
                 .join("latest")
@@ -1239,17 +1256,6 @@ async fn restart_bare_services(
     let svc_list = coast_core::coastfile::Coastfile::from_file(&cf_path)
         .map(|cf| cf.services)
         .unwrap_or_default();
-
-    if let Some(save_cmd) = crate::bare_services::generate_cache_save_command(&svc_list) {
-        exec_and_log(
-            rt,
-            container_id,
-            &["sh", "-c", &save_cmd],
-            "bare services cache saved",
-            "bare services cache save failed",
-        )
-        .await;
-    }
 
     let stop_cmd = crate::bare_services::generate_stop_command();
     exec_and_log(

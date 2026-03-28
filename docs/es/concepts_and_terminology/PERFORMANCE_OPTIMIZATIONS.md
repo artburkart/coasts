@@ -23,7 +23,7 @@ Los mayores costos variables suelen ser el **bootstrap inicial de archivos ignor
 
 ### Bootstrap de Archivos Ignorados por Git
 
-Cuando se crea un worktree por primera vez, Coast inicializa (bootstrap) archivos seleccionados ignorados por git desde la raíz del proyecto hacia ese worktree.
+Cuando se crea un worktree por primera vez, Coast inicializa archivos seleccionados ignorados por git desde la raíz del proyecto hacia ese worktree.
 
 La secuencia es:
 
@@ -48,13 +48,13 @@ git diff --name-only <previous>..<worktree>
 
 El resultado se usa para degradar un servicio de `rebuild` a `restart` cuando ninguno de sus archivos disparadores cambió.
 
-Esto es mucho más acotado que el modelo antiguo de “hacer diff de cada archivo rastreado en cada assign”. Si no configuras disparadores de reconstrucción, aquí no hay ningún paso de diff de rama.
+Esto es mucho más acotado que el modelo anterior de “hacer diff de cada archivo rastreado en cada assign”. Si no configuras disparadores de reconstrucción, aquí no hay ningún paso de diff de rama.
 
 `exclude_paths` actualmente no cambia este diff. Mantén tus listas de disparadores enfocadas en verdaderas entradas de tiempo de build como Dockerfiles, lockfiles y manifiestos de paquetes.
 
 ## `exclude_paths` — La Palanca Principal para Nuevos Worktrees
 
-La opción `exclude_paths` en tu Coastfile le dice a Coast que omita árboles de directorios completos al construir la lista de archivos ignorados por git para el bootstrap de un nuevo worktree.
+La opción `exclude_paths` en tu Coastfile le dice a Coast que omita árboles de directorios completos al construir la lista de archivos para el bootstrap de archivos ignorados por git de un nuevo worktree.
 
 ```toml
 [assign]
@@ -81,7 +81,7 @@ Empieza perfilando tus archivos ignorados:
 git ls-files --others --ignored --exclude-standard | cut -d'/' -f1 | sort | uniq -c | sort -rn
 ```
 
-Si además quieres una vista del layout rastreado para ajustar los disparadores de reconstrucción, usa:
+Si además quieres una vista de la estructura rastreada para ajustar los disparadores de reconstrucción, usa:
 
 ```bash
 git ls-files | cut -d'/' -f1 | sort | uniq -c | sort -rn
@@ -103,13 +103,13 @@ git ls-files | cut -d'/' -f1 | sort | uniq -c | sort -rn
 Un monorepo con muchos directorios de nivel superior, pero solo un subconjunto importa para los servicios que se ejecutan en este Coast:
 
 ```text
-  13,000  bookface/         ← active
-   7,000  ycinternal/       ← active
+  13,000  web-app/          ← active
+   7,000  admin-api/        ← active
      850  shared/           ← used by both
    3,800  .yarn/            ← excludable
-   2,500  startupschool/    ← excludable
+   2,500  marketing-site/   ← excludable
      500  misc/             ← excludable
-     300  ycapp/            ← excludable
+     300  mobile-app/       ← excludable
      ...  (12 more dirs)    ← excludable
 ```
 
@@ -118,13 +118,13 @@ Un monorepo con muchos directorios de nivel superior, pero solo un subconjunto i
 default = "none"
 exclude_paths = [
     ".yarn",
-    "startupschool",
+    "marketing-site",
     "misc",
-    "ycapp",
-    "apply",
+    "mobile-app",
+    "onboarding",
     "cli",
     "deploy",
-    "lambdas",
+    "functions",
     # ... any other directories not needed by active services
 ]
 ```

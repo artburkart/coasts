@@ -1387,6 +1387,7 @@ private_paths = ["data"]
 packages = ["nodejs", "npm"]
 
 [services.web]
+install = ["echo 'install step 1' >> /var/log/coast-services/web.install.log", "sleep 15 && echo 'install step 2 (slow)' >> /var/log/coast-services/web.install.log"]
 command = "node server.js"
 port = 41000
 restart = "on-failure"
@@ -1395,7 +1396,10 @@ restart = "on-failure"
 web = 41000
 
 [assign]
-default = "restart"
+default = "none"
+
+[assign.services]
+web = "restart"
 COASTFILE_EOF
 
     cat > "$dir/server.js" << 'SERVERJS_EOF'

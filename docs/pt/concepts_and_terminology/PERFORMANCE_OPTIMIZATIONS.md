@@ -103,13 +103,13 @@ git ls-files | cut -d'/' -f1 | sort | uniq -c | sort -rn
 Um monorepo com muitos diretórios no topo, mas apenas um subconjunto importa para os serviços em execução neste Coast:
 
 ```text
-  13,000  bookface/         ← active
-   7,000  ycinternal/       ← active
+  13,000  web-app/          ← active
+   7,000  admin-api/        ← active
      850  shared/           ← used by both
    3,800  .yarn/            ← excludable
-   2,500  startupschool/    ← excludable
+   2,500  marketing-site/   ← excludable
      500  misc/             ← excludable
-     300  ycapp/            ← excludable
+     300  mobile-app/       ← excludable
      ...  (12 more dirs)    ← excludable
 ```
 
@@ -118,13 +118,13 @@ Um monorepo com muitos diretórios no topo, mas apenas um subconjunto importa pa
 default = "none"
 exclude_paths = [
     ".yarn",
-    "startupschool",
+    "marketing-site",
     "misc",
-    "ycapp",
-    "apply",
+    "mobile-app",
+    "onboarding",
     "cli",
     "deploy",
-    "lambdas",
+    "functions",
     # ... any other directories not needed by active services
 ]
 ```

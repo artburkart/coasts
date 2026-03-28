@@ -54,7 +54,7 @@ git diff --name-only <previous>..<worktree>
 
 ## `exclude_paths` — 针对新 Worktree 的主要调节杆
 
-Coastfile 中的 `exclude_paths` 选项告诉 Coast:在为新 worktree 构建 gitignored 引导文件列表时，跳过整棵目录树。
+Coastfile 中的 `exclude_paths` 选项告诉 Coast 在为新 worktree 构建 gitignored 引导文件列表时，跳过整棵目录树。
 
 ```toml
 [assign]
@@ -103,13 +103,13 @@ git ls-files | cut -d'/' -f1 | sort | uniq -c | sort -rn
 一个拥有很多顶层目录的 monorepo，但只有其中一部分与此 Coast 中运行的服务有关:
 
 ```text
-  13,000  bookface/         ← active
-   7,000  ycinternal/       ← active
+  13,000  web-app/          ← active
+   7,000  admin-api/        ← active
      850  shared/           ← used by both
    3,800  .yarn/            ← excludable
-   2,500  startupschool/    ← excludable
+   2,500  marketing-site/   ← excludable
      500  misc/             ← excludable
-     300  ycapp/            ← excludable
+     300  mobile-app/       ← excludable
      ...  (12 more dirs)    ← excludable
 ```
 
@@ -118,13 +118,13 @@ git ls-files | cut -d'/' -f1 | sort | uniq -c | sort -rn
 default = "none"
 exclude_paths = [
     ".yarn",
-    "startupschool",
+    "marketing-site",
     "misc",
-    "ycapp",
-    "apply",
+    "mobile-app",
+    "onboarding",
     "cli",
     "deploy",
-    "lambdas",
+    "functions",
     # ... any other directories not needed by active services
 ]
 ```

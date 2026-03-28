@@ -184,10 +184,14 @@ async fn run_compose_up<R: ExecRuntime>(
 }
 
 pub(crate) fn compose_ps_output_is_ready(output: &str) -> bool {
-    !output.is_empty()
-        && output
-            .lines()
-            .all(|line| line.contains("running") || line.contains("healthy"))
+    // Empty output means no compose services exist (e.g., all services are
+    // shared services). Treat this as ready -- there's nothing to wait for.
+    if output.trim().is_empty() {
+        return true;
+    }
+    output
+        .lines()
+        .all(|line| line.contains("running") || line.contains("healthy"))
 }
 
 async fn wait_for_compose_health<R: ExecRuntime>(
@@ -573,8 +577,13 @@ mod tests {
     }
 
     #[test]
-    fn test_compose_ps_output_is_ready_rejects_empty_or_unhealthy_lines() {
-        assert!(!compose_ps_output_is_ready(""));
+    fn test_compose_ps_output_is_ready_empty_means_no_services() {
+        assert!(compose_ps_output_is_ready(""));
+        assert!(compose_ps_output_is_ready("  \n  "));
+    }
+
+    #[test]
+    fn test_compose_ps_output_is_ready_rejects_unhealthy_lines() {
         assert!(!compose_ps_output_is_ready(r#"{"State":"exited"}"#));
     }
 

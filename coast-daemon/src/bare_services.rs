@@ -9,7 +9,6 @@ use coast_docker::runtime::Runtime;
 
 pub const SUPERVISOR_DIR: &str = "/coast-supervisor";
 pub const LOG_DIR: &str = "/var/log/coast-services";
-pub const CACHE_DIR: &str = "/coast-cache";
 
 /// Check if a container has the supervisor directory, indicating it uses bare services.
 pub async fn has_bare_services(docker: &bollard::Docker, container_id: &str) -> bool {
@@ -164,13 +163,20 @@ fn stop_all_script(services: &[BareServiceConfig]) -> String {
             name = svc.name
         ));
     }
-    // Kill any remaining supervisor wrappers (sh /coast-supervisor/<name>.sh)
-    // but NOT the stop/start scripts themselves
     for svc in services {
         script.push_str(&format!(
             "pkill -f '/coast-supervisor/{name}.sh' 2>/dev/null || true\n",
             name = svc.name
         ));
+    }
+    // Port-based kill as final fallback: ensures orphaned child processes
+    // (e.g. Next.js spawned by yarn) that survived PID/pkill are cleaned up.
+    for svc in services {
+        if let Some(port) = svc.port {
+            script.push_str(&format!(
+                "fuser -k {port}/tcp 2>/dev/null || true\n"
+            ));
+        }
     }
     script.push_str("echo \"[coast-supervisor] all services stopped\"\n");
     script
@@ -202,7 +208,9 @@ fn ps_script(services: &[BareServiceConfig]) -> String {
 ///
 /// Returns a shell one-liner suitable for `exec_in_coast(container_id, &["sh", "-c", &cmd])`.
 pub fn generate_setup_and_start_command(services: &[BareServiceConfig]) -> String {
-    let mut parts: Vec<String> = vec![format!("mkdir -p {SUPERVISOR_DIR} {LOG_DIR}")];
+    let mut parts: Vec<String> = vec![format!(
+        "mkdir -p {SUPERVISOR_DIR} {LOG_DIR} && chmod 777 {LOG_DIR}"
+    )];
 
     for svc in services {
         let wrapper = service_wrapper_script(svc);
@@ -231,7 +239,14 @@ pub fn generate_setup_and_start_command(services: &[BareServiceConfig]) -> Strin
         "printf '%s' {escaped_ps} > {SUPERVISOR_DIR}/ps.sh && chmod +x {SUPERVISOR_DIR}/ps.sh"
     ));
 
-    // Run install steps (fail-fast) before starting services
+    // Ensure HOME points to a writable dir for Go/Node/Yarn caches.
+    // Use /tmp which is always world-writable in Docker containers.
+    parts.push("export HOME=/tmp && mkdir -p /tmp/.cache".to_string());
+
+    // Run install steps (fail-fast) before starting services.
+    // Cache dirs are already bind-mounted from /coast-cache/ so install
+    // writes (e.g. yarn install populating node_modules) persist across
+    // worktree switches without any copy step.
     for svc in services {
         for cmd in &svc.install {
             let install_log = format!("{LOG_DIR}/{}.install.log", svc.name);
@@ -244,72 +259,50 @@ pub fn generate_setup_and_start_command(services: &[BareServiceConfig]) -> Strin
     parts.join(" && ")
 }
 
-/// Save cached directories from /workspace to the persistent cache.
-/// Uses cp -al (hardlinks) for near-instant copies without data duplication.
-pub fn generate_cache_save_command(services: &[BareServiceConfig]) -> Option<String> {
-    let mut parts: Vec<String> = Vec::new();
-    for svc in services {
-        for dir in &svc.cache {
-            let cache_dest = format!("{CACHE_DIR}/{}/{dir}", svc.name);
-            parts.push(format!(
-                "if [ -d '/workspace/{dir}' ]; then \
-                   rm -rf '{cache_dest}' && \
-                   mkdir -p '$(dirname \"{cache_dest}\")' && \
-                   cp -al '/workspace/{dir}' '{cache_dest}' 2>/dev/null || \
-                   cp -a '/workspace/{dir}' '{cache_dest}'; \
-                 fi"
-            ));
-        }
-    }
-    if parts.is_empty() {
-        None
-    } else {
-        Some(parts.join("; "))
-    }
-}
-
-/// Restore cached directories into /workspace via hardlink copy.
-/// Each worktree gets its own independent copy (hardlinks share data on disk
-/// but allow independent modifications like Vite's .vite/deps rebuild).
-pub fn generate_cache_restore_command(services: &[BareServiceConfig]) -> Option<String> {
-    let mut parts: Vec<String> = Vec::new();
-    for svc in services {
-        for dir in &svc.cache {
-            let cache_src = format!("{CACHE_DIR}/{}/{dir}", svc.name);
-            parts.push(format!(
-                "if [ -d '{cache_src}' ] && [ ! -e '/workspace/{dir}' ]; then \
-                   mkdir -p '$(dirname \"/workspace/{dir}\")' && \
-                   cp -al '{cache_src}' '/workspace/{dir}' 2>/dev/null || \
-                   cp -a '{cache_src}' '/workspace/{dir}'; \
-                   rm -rf '/workspace/{dir}/.vite' 2>/dev/null; \
-                 fi"
-            ));
-        }
-    }
-    if parts.is_empty() {
-        None
-    } else {
-        Some(format!("mkdir -p {CACHE_DIR}; {}", parts.join("; ")))
-    }
-}
-
 /// Build the install-then-start command (for assign/branch-switch).
 ///
-/// Restores cached directories first, then runs install steps, saves
-/// the cache, and starts services.
+/// Cache dirs are already bind-mounted from /coast-cache/ before this runs,
+/// so install steps operate directly on the persistent mount. No copy needed.
 pub fn generate_install_and_start_command(services: &[BareServiceConfig]) -> String {
     let mut parts: Vec<String> = vec![format!("mkdir -p {LOG_DIR}")];
-    if let Some(restore) = generate_cache_restore_command(services) {
-        parts.push(restore);
+    // Regenerate supervisor scripts so the latest stop/start/wrapper logic is used.
+    for svc in services {
+        let wrapper = service_wrapper_script(svc);
+        let escaped = shell_escape(&wrapper);
+        parts.push(format!(
+            "printf '%s' {escaped} > {SUPERVISOR_DIR}/{name}.sh && chmod +x {SUPERVISOR_DIR}/{name}.sh",
+            name = svc.name
+        ));
     }
+    let stop_all = stop_all_script(services);
+    let escaped_stop = shell_escape(&stop_all);
+    parts.push(format!(
+        "printf '%s' {escaped_stop} > {SUPERVISOR_DIR}/stop-all.sh && chmod +x {SUPERVISOR_DIR}/stop-all.sh"
+    ));
+    let start_all = start_all_script(services);
+    let escaped_start = shell_escape(&start_all);
+    parts.push(format!(
+        "printf '%s' {escaped_start} > {SUPERVISOR_DIR}/start-all.sh && chmod +x {SUPERVISOR_DIR}/start-all.sh"
+    ));
+    let stale_logs: Vec<String> = services
+        .iter()
+        .flat_map(|svc| {
+            [
+                format!("{LOG_DIR}/{}.install.log", svc.name),
+                format!("{LOG_DIR}/{}.log", svc.name),
+            ]
+        })
+        .collect();
+    if !stale_logs.is_empty() {
+        let rm_list = stale_logs.join("' '");
+        parts.push(format!("rm -f '{rm_list}'"));
+    }
+    parts.push("export HOME=/tmp && mkdir -p /tmp/.cache".to_string());
     for svc in services {
         for cmd in &svc.install {
             let install_log = format!("{LOG_DIR}/{}.install.log", svc.name);
             parts.push(format!("cd /workspace && ({cmd}) >> {install_log} 2>&1"));
         }
-    }
-    if let Some(save) = generate_cache_save_command(services) {
-        parts.push(save);
     }
     parts.push(format!("sh {SUPERVISOR_DIR}/start-all.sh"));
     parts.join(" && ")
@@ -320,12 +313,18 @@ pub fn generate_stop_command() -> String {
     format!("sh {SUPERVISOR_DIR}/stop-all.sh")
 }
 
-/// Stop all bare services with a double-stop to catch wrapper respawns.
+/// Stop all bare services with a double-stop, then kill any orphans by port.
 ///
 /// Used before workspace remounts to ensure held flocks on private_paths
-/// are released. Runs the stop script twice because `restart: on-failure`
-/// wrappers can respawn the service between the first kill and completion.
-pub async fn stop_before_remount(docker: &bollard::Docker, container_id: &str) {
+/// are released and ports are freed. Runs the stop script twice because
+/// `restart: on-failure` wrappers can respawn between the first kill and
+/// completion, then uses `fuser -k` on each declared port as a final
+/// fallback to catch orphaned child processes.
+pub async fn stop_before_remount(
+    docker: &bollard::Docker,
+    container_id: &str,
+    services: &[BareServiceConfig],
+) {
     if !has_bare_services(docker, container_id).await {
         return;
     }
@@ -337,6 +336,29 @@ pub async fn stop_before_remount(docker: &bollard::Docker, container_id: &str) {
     let _ = rt
         .exec_in_coast(container_id, &["sh", "-c", &stop_cmd])
         .await;
+
+    let port_kills: Vec<String> = services
+        .iter()
+        .filter_map(|svc| {
+            svc.port.map(|p| {
+                let hex_port = format!("{:04X}", p);
+                format!(
+                    "for inode in $(awk '/:{}/ {{print $10}}' /proc/net/tcp6 /proc/net/tcp 2>/dev/null); do \
+                       for fd in /proc/[0-9]*/fd/*; do \
+                         readlink \"$fd\" 2>/dev/null | grep -q \"socket:\\[$inode\\]\" && \
+                         kill -9 $(echo \"$fd\" | cut -d/ -f3) 2>/dev/null; \
+                       done; \
+                     done",
+                    hex_port
+                )
+            })
+        })
+        .collect();
+    if !port_kills.is_empty() {
+        let cmd = port_kills.join("; ");
+        let _ = rt.exec_in_coast(container_id, &["sh", "-c", &cmd]).await;
+    }
+
     tracing::info!("bare services stopped before workspace remount");
 }
 
@@ -639,58 +661,7 @@ mod tests {
     }
 
     #[test]
-    fn test_cache_restore_uses_hardlink_copy_not_symlink() {
-        let svc = BareServiceConfig {
-            name: "vite-web".to_string(),
-            command: "npm run dev".to_string(),
-            port: None,
-            restart: RestartPolicy::No,
-            install: vec![],
-            cache: vec!["node_modules".to_string()],
-        };
-        let cmd = generate_cache_restore_command(&[svc]).unwrap();
-        assert!(
-            cmd.contains("cp -al"),
-            "should use cp -al (hardlink copy), not symlink"
-        );
-        assert!(!cmd.contains("ln -sfn"), "should NOT use ln -sfn (symlink)");
-        assert!(
-            cmd.contains("rm -rf '/workspace/node_modules/.vite'"),
-            "should clean stale Vite cache after restore"
-        );
-        assert!(
-            cmd.contains("/coast-cache/vite-web/node_modules"),
-            "cache source should be /coast-cache/<service>/<dir>"
-        );
-    }
-
-    #[test]
-    fn test_cache_save_command() {
-        let svc = BareServiceConfig {
-            name: "vite-web".to_string(),
-            command: "npm run dev".to_string(),
-            port: None,
-            restart: RestartPolicy::No,
-            install: vec![],
-            cache: vec!["node_modules".to_string()],
-        };
-        let cmd = generate_cache_save_command(&[svc]).unwrap();
-        assert!(cmd.contains("cp -al"), "should use cp -al for save");
-        assert!(
-            cmd.contains("/coast-cache/vite-web/node_modules"),
-            "cache dest should be /coast-cache/<service>/<dir>"
-        );
-    }
-
-    #[test]
-    fn test_cache_commands_none_when_no_cache_dirs() {
-        let svc = test_svc("web", "npm run dev", RestartPolicy::No);
-        assert!(generate_cache_save_command(&[svc.clone()]).is_none());
-        assert!(generate_cache_restore_command(&[svc]).is_none());
-    }
-
-    #[test]
-    fn test_install_and_start_with_cache_includes_restore_and_save() {
+    fn test_install_and_start_no_cache_copy_steps() {
         let svc = BareServiceConfig {
             name: "vite".to_string(),
             command: "npm run dev".to_string(),
@@ -700,34 +671,18 @@ mod tests {
             cache: vec!["node_modules".to_string()],
         };
         let cmd = generate_install_and_start_command(&[svc]);
-        let segments: Vec<&str> = cmd.split(" && ").collect();
-
-        let restore_idx = segments
-            .iter()
-            .position(|s| s.contains("coast-cache") && s.contains("cp -al"))
-            .expect("must have cache restore step");
-        let install_idx = segments
-            .iter()
-            .position(|s| s.contains("npm install"))
-            .expect("must have install step");
-        let save_idx = segments
-            .iter()
-            .rposition(|s| s.contains("coast-cache") && s.contains("cp -al"))
-            .expect("must have cache save step");
-        let start_idx = segments
-            .iter()
-            .position(|s| s.contains("start-all.sh"))
-            .expect("must have start step");
-
         assert!(
-            restore_idx < install_idx,
-            "cache restore must come before install"
+            !cmd.contains("cp -al"),
+            "should not contain cp -al (cache is bind-mounted, not copied)"
         );
         assert!(
-            install_idx < save_idx,
-            "install must come before cache save"
+            cmd.contains("npm install"),
+            "should contain install step"
         );
-        assert!(save_idx < start_idx, "cache save must come before start");
+        assert!(
+            cmd.contains("start-all.sh"),
+            "should contain start step"
+        );
     }
 
     #[test]
@@ -794,5 +749,53 @@ mod tests {
             script.contains("kill -9 -- -"),
             "stop script must kill each child"
         );
+    }
+
+    #[test]
+    fn test_setup_command_with_complex_install_steps() {
+        let svcs = vec![
+            BareServiceConfig {
+                name: "zoekt".to_string(),
+                command: "cd /workspace && ./bin/zoekt-webserver -index .sourcebot/index -rpc"
+                    .to_string(),
+                port: Some(6070),
+                restart: RestartPolicy::OnFailure,
+                install: vec!["cd /workspace && make zoekt".to_string()],
+                cache: vec!["bin".to_string()],
+            },
+            BareServiceConfig {
+                name: "web".to_string(),
+                command: "cd /workspace && yarn dev:web".to_string(),
+                port: Some(3000),
+                restart: RestartPolicy::OnFailure,
+                install: vec![
+                    "cd /workspace && make yarn".to_string(),
+                    "cd /workspace && test -f config.json || echo {} > config.json".to_string(),
+                    "cd /workspace && yarn dev:prisma:migrate:dev".to_string(),
+                ],
+                cache: vec!["node_modules".to_string()],
+            },
+            BareServiceConfig {
+                name: "backend".to_string(),
+                command: "cd /workspace && yarn dev:backend".to_string(),
+                port: None,
+                restart: RestartPolicy::OnFailure,
+                install: vec!["cd /workspace && make yarn".to_string()],
+                cache: vec!["node_modules".to_string()],
+            },
+        ];
+        let cmd = generate_setup_and_start_command(&svcs);
+        assert!(cmd.contains("coast-supervisor"));
+        assert!(cmd.contains("start-all.sh"));
+        // Verify the command is valid shell by checking balanced quotes
+        let single_quotes = cmd.chars().filter(|c| *c == '\'').count();
+        assert_eq!(
+            single_quotes % 2,
+            0,
+            "unbalanced single quotes in generated command (length={})",
+            cmd.len()
+        );
+        eprintln!("Generated setup command length: {} bytes", cmd.len());
+        std::fs::write("/tmp/coast_setup_cmd.sh", &cmd).unwrap();
     }
 }

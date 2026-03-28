@@ -215,6 +215,7 @@ async fn prepare_runtime(ctx: &InstanceConfig<'_>) -> Result<()> {
         ctx.container_id,
         &ctx.req.name,
         &ctx.private_paths,
+        &ctx.validated.bare_services,
     )
     .await;
     install_mcp_if_configured(ctx).await?;
@@ -919,11 +920,14 @@ async fn bind_workspace(
     container_id: &str,
     instance_name: &str,
     private_paths: &[String],
+    bare_services: &[coast_core::types::BareServiceConfig],
 ) {
     let private_cmds =
         coast_core::coastfile::Coastfile::build_private_paths_mount_commands(private_paths);
+    let cache_cmds =
+        coast_core::coastfile::Coastfile::build_cache_mount_commands(bare_services);
     let cmd = format!(
-        "mkdir -p /workspace && mount --bind /host-project /workspace && mount --make-rshared /workspace{private_cmds}"
+        "mkdir -p /workspace && mount --bind /host-project /workspace && mount --make-rshared /workspace{private_cmds}{cache_cmds}"
     );
     let mount_rt = coast_docker::dind::DindRuntime::with_client(docker.clone());
     let mount_result = mount_rt

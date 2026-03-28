@@ -1,6 +1,6 @@
 # 성능 최적화
 
-Coast는 브랜치 전환을 빠르게 만들도록 설계되었지만, 대규모 모노레포에서는 기본 동작만으로도 지연이 발생할 수 있습니다. 이 페이지에서는 Coastfile에서 사용할 수 있는 조절 장치들과, 더 중요하게는 그것들이 실제로 `coast assign`의 어떤 부분에 영향을 미치는지 다룹니다.
+Coast는 브랜치 전환을 빠르게 만들도록 설계되었지만, 대규모 모노레포에서는 기본 동작만으로도 여전히 지연이 발생할 수 있습니다. 이 페이지에서는 Coastfile에서 사용할 수 있는 조절 장치들과, 더 중요하게는 그것들이 실제로 `coast assign`의 어떤 부분에 영향을 미치는지 다룹니다.
 
 ## Assign이 느릴 수 있는 이유
 
@@ -19,7 +19,7 @@ coast assign dev-1 --worktree feature/payments
   8. wait for healthy
 ```
 
-가장 큰 변동 비용은 보통 **최초 gitignored 부트스트랩**, **컨테이너 재시작**, **이미지 리빌드**입니다. 리빌드 트리거를 위한 선택적 브랜치 diff는 훨씬 저렴하지만, 트리거 세트를 광범위하게 지정하면 이것도 누적될 수 있습니다.
+가장 큰 가변 비용은 보통 **최초 gitignored 부트스트랩**, **컨테이너 재시작**, **이미지 리빌드**입니다. 리빌드 트리거에 사용되는 선택적 브랜치 diff는 훨씬 저렴하지만, 트리거 세트를 광범위하게 지정하면 이것도 누적될 수 있습니다.
 
 ### Gitignored 파일 부트스트랩
 
@@ -36,7 +36,7 @@ coast assign dev-1 --worktree feature/payments
 
 `node_modules`, `.git`, `dist`, `target`, `.next`, `.nuxt`, `.cache`, `.worktrees`, `.coasts` 같은 대규모 디렉터리는 자동으로 제외됩니다. 큰 의존성 디렉터리는 이 범용 부트스트랩 단계가 아니라 서비스 캐시나 볼륨으로 처리되는 것이 기대됩니다.
 
-파일 목록은 사전에 생성되므로, `rsync`는 저장소 전체를 무작정 크롤링하는 대신 대상이 지정된 목록을 기반으로 동작합니다. 그럼에도 매우 큰 ignored-file 집합을 가진 저장소는 워크트리가 처음 생성될 때 눈에 띄는 일회성 부트스트랩 비용을 치를 수 있습니다. 이 부트스트랩을 수동으로 새로 고쳐야 한다면 `coast assign --force-sync`를 실행하세요.
+파일 목록은 사전에 생성되므로, `rsync`는 저장소 전체를 무작정 순회하는 대신 대상이 지정된 목록을 기반으로 동작합니다. 그럼에도 매우 큰 ignored-file 집합을 가진 저장소는 워크트리가 처음 생성될 때 눈에 띄는 일회성 부트스트랩 비용을 치를 수 있습니다. 이 부트스트랩을 수동으로 새로 고쳐야 한다면 `coast assign --force-sync`를 실행하세요.
 
 ### Rebuild-Trigger Diff
 
@@ -46,9 +46,9 @@ Coast는 `[assign.rebuild_triggers]`가 구성된 경우에만 브랜치 diff를
 git diff --name-only <previous>..<worktree>
 ```
 
-그 결과는 트리거 파일이 하나도 변경되지 않았을 때 서비스를 `rebuild`에서 `restart`로 다운그레이드하는 데 사용됩니다.
+그 결과는 트리거 파일이 하나도 변경되지 않았을 때 서비스를 `rebuild`에서 `restart`로 낮추는 데 사용됩니다.
 
-이는 예전의 “매 assign마다 추적된 모든 파일을 diff”하는 모델보다 훨씬 좁은 범위입니다. 리빌드 트리거를 구성하지 않으면, 여기에는 브랜치 diff 단계가 아예 없습니다.
+이는 예전의 "매 assign마다 추적된 모든 파일을 diff"하는 모델보다 훨씬 좁은 범위입니다. 리빌드 트리거를 구성하지 않으면, 여기에는 브랜치 diff 단계가 아예 없습니다.
 
 `exclude_paths`는 현재 이 diff를 변경하지 않습니다. 트리거 목록은 Dockerfile, lockfile, 패키지 매니페스트 같은 진정한 빌드 시점 입력에 집중해서 유지하세요.
 
@@ -69,7 +69,7 @@ exclude_paths = [
 
 제외된 경로 아래의 파일이 Git에 의해 추적되는 경우, 그 파일들은 여전히 워크트리에 존재합니다. Coast는 최초 부트스트랩 동안 해당 트리 아래의 무시된 파일을 열거하고 하드링크하는 데 시간을 쓰지 않을 뿐입니다.
 
-이는 저장소 루트에 실행 중인 서비스가 신경 쓰지 않는 큰 ignored 디렉터리가 있을 때 가장 효과가 큽니다: 관련 없는 앱, 벤더된 캐시, 테스트 픽스처, 생성된 문서, 기타 무거운 트리 등.
+이는 저장소 루트에 실행 중인 서비스가 신경 쓰지 않는 큰 ignored 디렉터리가 있을 때 가장 효과가 큽니다: 관련 없는 앱, 벤더 캐시, 테스트 픽스처, 생성된 문서, 기타 무거운 트리 등입니다.
 
 이미 동기화된 동일한 워크트리에 반복적으로 assign하는 경우에는 부트스트랩이 건너뛰어지므로 `exclude_paths`의 영향이 줄어듭니다. 그 경우에는 서비스 restart/rebuild 선택이 지배적인 요인이 됩니다.
 
@@ -103,13 +103,13 @@ git ls-files | cut -d'/' -f1 | sort | uniq -c | sort -rn
 최상위 디렉터리는 많지만, 이 Coast에서 실행 중인 서비스에 중요한 것은 일부뿐인 모노레포:
 
 ```text
-  13,000  bookface/         ← active
-   7,000  ycinternal/       ← active
+  13,000  web-app/          ← active
+   7,000  admin-api/        ← active
      850  shared/           ← used by both
    3,800  .yarn/            ← excludable
-   2,500  startupschool/    ← excludable
+   2,500  marketing-site/   ← excludable
      500  misc/             ← excludable
-     300  ycapp/            ← excludable
+     300  mobile-app/       ← excludable
      ...  (12 more dirs)    ← excludable
 ```
 
@@ -118,13 +118,13 @@ git ls-files | cut -d'/' -f1 | sort | uniq -c | sort -rn
 default = "none"
 exclude_paths = [
     ".yarn",
-    "startupschool",
+    "marketing-site",
     "misc",
-    "ycapp",
-    "apply",
+    "mobile-app",
+    "onboarding",
     "cli",
     "deploy",
-    "lambdas",
+    "functions",
     # ... any other directories not needed by active services
 ]
 ```

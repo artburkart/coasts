@@ -661,10 +661,64 @@ impl Coastfile {
         format!(" && {}", cmds.join(" && "))
     }
 
+    /// Build shell commands to bind-mount bare service cache directories over
+    /// `/workspace`. Cache dirs are stored at `/coast-cache/_shared/{dir}` for
+    /// paths declared by multiple services, or `/coast-cache/{svc}/{dir}` for
+    /// service-specific paths. Deduplicates by workspace path.
+    pub fn build_cache_mount_commands(services: &[BareServiceConfig]) -> String {
+        let mut seen = HashSet::new();
+        let mut cmds = Vec::new();
+        for svc in services {
+            for dir in &svc.cache {
+                if !seen.insert(dir.clone()) {
+                    continue;
+                }
+                let is_shared = services
+                    .iter()
+                    .filter(|s| s.cache.contains(dir))
+                    .count()
+                    > 1;
+                let cache = if is_shared {
+                    format!("/coast-cache/_shared/{dir}")
+                } else {
+                    format!("/coast-cache/{}/{dir}", svc.name)
+                };
+                let workspace = format!("/workspace/{dir}");
+                cmds.push(format!(
+                    "mkdir -p '{cache}' '{workspace}' && mount --bind '{cache}' '{workspace}'"
+                ));
+            }
+        }
+        if cmds.is_empty() {
+            return String::new();
+        }
+        format!(" && {}", cmds.join(" && "))
+    }
+
+    /// Generate shell commands to unmount bare service cache bind-mounts
+    /// before a workspace remount. Deduplicates to avoid unmounting the same
+    /// path multiple times (which would peel stacked mounts).
+    pub fn build_cache_unmount_commands(services: &[BareServiceConfig]) -> String {
+        let mut seen = HashSet::new();
+        let mut cmds = Vec::new();
+        for svc in services {
+            for dir in &svc.cache {
+                if !seen.insert(dir.clone()) {
+                    continue;
+                }
+                cmds.push(format!("umount -l '/workspace/{dir}' 2>/dev/null || true"));
+            }
+        }
+        if cmds.is_empty() {
+            return String::new();
+        }
+        format!("{}; ", cmds.join("; "))
+    }
+
     /// Generate shell commands to unmount private_paths sub-mounts before a
-    /// workspace remount. For each private path, kill processes holding open
-    /// fds on files within that path (orphaned flock children), then
-    /// lazy-unmount the sub-mount.
+    /// workspace remount. Bare services are already stopped before this runs,
+    /// so we just lazy-unmount. Processes that still have open fds will keep
+    /// their existing file handles until they close naturally.
     pub fn build_private_paths_unmount_commands(private_paths: &[String]) -> String {
         if private_paths.is_empty() {
             return String::new();
@@ -672,11 +726,25 @@ impl Coastfile {
         let cmds: Vec<String> = private_paths
             .iter()
             .map(|p| {
-                format!(
-                    "find '/workspace/{p}' -type f -exec fuser -k {{}} \\; 2>/dev/null || true; \
-                     sleep 0.2; \
-                     umount -l '/workspace/{p}' 2>/dev/null || true"
-                )
+                format!("umount -l '/workspace/{p}' 2>/dev/null || true")
+            })
+            .collect();
+        format!("{}; ", cmds.join("; "))
+    }
+
+    /// Clear the contents of private_paths backing directories so that dev
+    /// servers recompile from fresh source after a worktree switch. Operates
+    /// on `/coast-private/{path}` (the backing store), not on the workspace
+    /// mount point. Only used during assign/unassign, not run/start.
+    pub fn build_private_paths_clear_commands(private_paths: &[String]) -> String {
+        if private_paths.is_empty() {
+            return String::new();
+        }
+        let cmds: Vec<String> = private_paths
+            .iter()
+            .map(|p| {
+                let private = format!("{PRIVATE_PATHS_CONTAINER_DIR}/{p}");
+                format!("rm -rf '{private}' && mkdir -p '{private}'")
             })
             .collect();
         format!("{}; ", cmds.join("; "))

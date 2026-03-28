@@ -98,11 +98,14 @@ fn build_workspace_mount_command(
     mount_src: &str,
     symlink_fix: &str,
     private_paths: &[String],
+    bare_services: &[coast_core::types::BareServiceConfig],
 ) -> String {
     let private_cmds =
         coast_core::coastfile::Coastfile::build_private_paths_mount_commands(private_paths);
+    let cache_cmds =
+        coast_core::coastfile::Coastfile::build_cache_mount_commands(bare_services);
     format!(
-        "mkdir -p /workspace && mount --bind {mount_src} /workspace && mount --make-rshared /workspace{symlink_fix}{private_cmds}"
+        "mkdir -p /workspace && mount --bind {mount_src} /workspace && mount --make-rshared /workspace{symlink_fix}{private_cmds}{cache_cmds}"
     )
 }
 
@@ -173,7 +176,10 @@ async fn reapply_workspace_mount(
     } else {
         String::new()
     };
-    let mount_cmd = build_workspace_mount_command(&mount_src, &symlink_fix, private_paths);
+    let bare_services = parsed_coastfile
+        .map(|cf| cf.services.as_slice())
+        .unwrap_or(&[]);
+    let mount_cmd = build_workspace_mount_command(&mount_src, &symlink_fix, private_paths, bare_services);
     match rt
         .exec_in_coast(container_id, &["sh", "-c", &mount_cmd])
         .await
@@ -964,7 +970,7 @@ mod tests {
 
     #[test]
     fn test_build_workspace_mount_command_basic() {
-        let cmd = build_workspace_mount_command("/host-project", "", &[]);
+        let cmd = build_workspace_mount_command("/host-project", "", &[], &[]);
         assert_eq!(
             cmd,
             "mkdir -p /workspace && mount --bind /host-project /workspace && mount --make-rshared /workspace"
@@ -974,7 +980,7 @@ mod tests {
     #[test]
     fn test_build_workspace_mount_command_with_symlink_fix() {
         let symlink_fix = " && mkdir -p '/home/user' && ln -sfn /host-project '/home/user/project'";
-        let cmd = build_workspace_mount_command("/host-project/.worktrees/feat", symlink_fix, &[]);
+        let cmd = build_workspace_mount_command("/host-project/.worktrees/feat", symlink_fix, &[], &[]);
         assert!(cmd.contains("mount --bind /host-project/.worktrees/feat /workspace"));
         assert!(cmd.contains("mkdir -p '/home/user'"));
         assert!(cmd.contains("ln -sfn /host-project '/home/user/project'"));
@@ -983,7 +989,7 @@ mod tests {
     #[test]
     fn test_build_workspace_mount_command_with_private_paths() {
         let private = vec!["frontend/.next".to_string()];
-        let cmd = build_workspace_mount_command("/host-project", "", &private);
+        let cmd = build_workspace_mount_command("/host-project", "", &private, &[]);
         assert!(cmd.contains("mount --make-rshared /workspace"));
         assert!(
             cmd.contains("mkdir -p '/coast-private/frontend/.next' '/workspace/frontend/.next'")

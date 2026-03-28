@@ -193,18 +193,35 @@ pub async fn handle(
         )
         .await;
 
-        crate::bare_services::stop_before_remount(docker, &container_id).await;
-
         let cf_data = super::assign::load_coastfile_data(&req.project);
+        let bare_svc_list = coast_core::coastfile::Coastfile::from_file(
+            &coast_core::artifact::coast_home()
+                .unwrap_or_else(|_| dirs::home_dir().unwrap_or_default().join(".coast"))
+                .join("images")
+                .join(&req.project)
+                .join("latest")
+                .join("coastfile.toml"),
+        )
+        .map(|cf| cf.services)
+        .unwrap_or_default();
+        crate::bare_services::stop_before_remount(docker, &container_id, &bare_svc_list).await;
+        let unmount_cache =
+            coast_core::coastfile::Coastfile::build_cache_unmount_commands(&bare_svc_list);
         let unmount_private =
             coast_core::coastfile::Coastfile::build_private_paths_unmount_commands(
+                &cf_data.private_paths,
+            );
+        let clear_private =
+            coast_core::coastfile::Coastfile::build_private_paths_clear_commands(
                 &cf_data.private_paths,
             );
         let private_cmds = coast_core::coastfile::Coastfile::build_private_paths_mount_commands(
             &cf_data.private_paths,
         );
+        let cache_cmds =
+            coast_core::coastfile::Coastfile::build_cache_mount_commands(&bare_svc_list);
         let mount_cmd = format!(
-            "{unmount_private}umount -l /workspace 2>/dev/null; mount --bind /host-project /workspace && mount --make-rshared /workspace{private_cmds}"
+            "{unmount_cache}{unmount_private}{clear_private}umount -l /workspace 2>/dev/null; mount --bind /host-project /workspace && mount --make-rshared /workspace{private_cmds}{cache_cmds}"
         );
         let mount_result = rt
             .exec_in_coast(&container_id, &["sh", "-c", &mount_cmd])
@@ -276,25 +293,10 @@ pub async fn handle(
                 }
             }
 
-            let home = dirs::home_dir().unwrap_or_default();
-            let cf_path = instance
-                .build_id
-                .as_ref()
-                .map(|bid| {
-                    home.join(".coast")
-                        .join("images")
-                        .join(&req.project)
-                        .join(bid)
-                        .join("coastfile.toml")
-                })
-                .filter(|p| p.exists())
-                .unwrap_or_else(|| {
-                    home.join(".coast")
-                        .join("images")
-                        .join(&req.project)
-                        .join("latest")
-                        .join("coastfile.toml")
-                });
+            let cf_path = super::artifact_coastfile_path(
+                &req.project,
+                instance.build_id.as_deref(),
+            );
             let svc_list = coast_core::coastfile::Coastfile::from_file(&cf_path)
                 .map(|cf| cf.services)
                 .unwrap_or_default();
