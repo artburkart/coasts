@@ -22,6 +22,8 @@ This section covers the core concepts and vocabulary used throughout Coasts. If 
 - [Coastfile Types](COASTFILE_TYPES.md) — composable Coastfile variants with extends, unset, omit, and autostart.
 - [Runtimes and Services](RUNTIMES_AND_SERVICES.md) — the DinD runtime, Docker-in-Docker architecture, and how services run inside a Coast.
 - [Bare Services](BARE_SERVICES.md) — running non-containerized processes inside a Coast and why you should containerize instead.
+- [Bare Service Optimization](BARE_SERVICE_OPTIMIZATION.md) — conditional installs, caching, private_paths, shared service connectivity, and assign strategies for bare services.
+- [Dynamic Port Environment Variables](DYNAMIC_PORT_ENVIRONMENT_VARIABLES.md) — the auto-injected `<SERVICE>_DYNAMIC_PORT` variables and how to use them in service commands.
 - [Logs](LOGS.md) — reading service logs from inside a Coast, the MCP tradeoff, and the Coastguard log viewer.
 - [Exec & Docker](EXEC_AND_DOCKER.md) — running commands inside a Coast and talking to the inner Docker daemon.
 - [Agent Shells](AGENT_SHELLS.md) — containerized agent TUIs, the OAuth tradeoff, and why you should probably run agents on the host instead.

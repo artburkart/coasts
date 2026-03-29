@@ -549,7 +549,9 @@
   "docs.nav.filesystem": "Filesystem",
   "docs.nav.privatePaths": "Private Paths",
   "docs.nav.bareServices": "Bare Services",
+  "docs.nav.bareServiceOptimization": "Bare Service Optimization",
   "docs.nav.mixedServiceTypes": "Mixed Service Types",
+  "docs.nav.dynamicPortEnvVars": "Dynamic Port Env Vars",
   "docs.nav.performanceOptimizations": "Performance Optimizations",
   "docs.nav.troubleshooting": "Troubleshooting",
   "docs.nav.coastfiles": "Coastfiles",
@@ -573,5 +575,6 @@
   "docs.nav.harnessShep": "Shep",
   "docs.nav.harnessMultipleHarnesses": "Multiple Harnesses",
   "docs.nav.recipes": "Recipes",
-  "docs.nav.recipesFullstackMonorepo": "Full-Stack Monorepo"
+  "docs.nav.recipesFullstackMonorepo": "Full-Stack Monorepo",
+  "docs.nav.recipesNextjs": "Next.js Application"
 }

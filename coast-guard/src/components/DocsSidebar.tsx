@@ -57,7 +57,9 @@ const DOC_TITLE_KEYS: Record<string, string> = {
   'concepts_and_terminology/FILESYSTEM.md': 'docs.nav.filesystem',
   'concepts_and_terminology/PRIVATE_PATHS.md': 'docs.nav.privatePaths',
   'concepts_and_terminology/BARE_SERVICES.md': 'docs.nav.bareServices',
+  'concepts_and_terminology/BARE_SERVICE_OPTIMIZATION.md': 'docs.nav.bareServiceOptimization',
   'concepts_and_terminology/MIXED_SERVICE_TYPES.md': 'docs.nav.mixedServiceTypes',
+  'concepts_and_terminology/DYNAMIC_PORT_ENVIRONMENT_VARIABLES.md': 'docs.nav.dynamicPortEnvVars',
   'concepts_and_terminology/PERFORMANCE_OPTIMIZATIONS.md': 'docs.nav.performanceOptimizations',
   'concepts_and_terminology/TROUBLESHOOTING.md': 'docs.nav.troubleshooting',
   'coastfiles/README.md': 'docs.nav.coastfiles',
@@ -82,6 +84,7 @@ const DOC_TITLE_KEYS: Record<string, string> = {
   'harnesses/MULTIPLE_HARNESSES.md': 'docs.nav.harnessMultipleHarnesses',
   'recipes/README.md': 'docs.nav.recipes',
   'recipes/FULLSTACK_MONOREPO.md': 'docs.nav.recipesFullstackMonorepo',
+  'recipes/NEXTJS.md': 'docs.nav.recipesNextjs',
 };
 
 function docRoute(node: TreeNode): string {
