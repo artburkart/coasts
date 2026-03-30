@@ -254,9 +254,7 @@ async fn detect_worktree_path(
     let step_t = std::time::Instant::now();
 
     // Phases 1–3: Search existing worktree directories.
-    if let Some((loc, phase)) =
-        find_existing_worktree(root, worktree_dirs, worktree_name).await
-    {
+    if let Some((loc, phase)) = find_existing_worktree(root, worktree_dirs, worktree_name).await {
         info!(elapsed_ms = step_t.elapsed().as_millis() as u64, wt_dir = %loc.wt_dir, phase, "resolved existing worktree");
         return Some(loc);
     }
