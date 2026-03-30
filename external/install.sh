@@ -256,8 +256,10 @@ fi
 printf "  2. ${BOLD}coast help${RESET}              See all available commands\n\n"
 ) >&2
 
-# Make coast available in the current shell (works when invoked via eval)
+# Make coast available in the current shell
+# bash/zsh: eval "$(curl ...)" runs this script directly, so export takes effect
+# fish: eval (curl ... | sh) pipes through sh, so printf output is captured and eval'd
 case "${SHELL:-}" in
   */fish) printf 'fish_add_path -gP "%s/.coast/bin"\n' "$HOME" ;;
-  *)      printf 'export PATH="%s/.coast/bin:${PATH}"\n' "$HOME" ;;
+  *)      export PATH="${HOME}/.coast/bin:${PATH}" ;;
 esac
