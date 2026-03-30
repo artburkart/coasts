@@ -244,7 +244,6 @@ async fn discover_and_classify(
     (actions, all_hot)
 }
 
-#[allow(clippy::cognitive_complexity)] // Linear phase chain — reads clearly top to bottom.
 async fn detect_worktree_path(
     project_root: &Option<std::path::PathBuf>,
     worktree_dirs: &[String],
@@ -254,47 +253,79 @@ async fn detect_worktree_path(
     let root = project_root.as_ref()?;
     let step_t = std::time::Instant::now();
 
+    // Phases 1–3: Search existing worktree directories.
+    if let Some((loc, phase)) =
+        find_existing_worktree(root, worktree_dirs, worktree_name).await
+    {
+        info!(elapsed_ms = step_t.elapsed().as_millis() as u64, wt_dir = %loc.wt_dir, phase, "resolved existing worktree");
+        return Some(loc);
+    }
+
+    // Phases 4–5: Git-detected dir or default fallback.
+    let (loc, phase) = fallback_worktree_path(root, default_wt_dir, worktree_name).await;
+    info!(elapsed_ms = step_t.elapsed().as_millis() as u64, wt_dir = %loc.wt_dir, phase, "using fallback worktree directory");
+    Some(loc)
+}
+
+/// Phases 1–3 of worktree detection: search for an existing worktree by
+/// directory name (local), directory/branch name (external), then branch name (local).
+/// Returns the location and a label describing which phase matched.
+async fn find_existing_worktree(
+    root: &std::path::Path,
+    worktree_dirs: &[String],
+    worktree_name: &str,
+) -> Option<(WorktreeLocation, &'static str)> {
     // Phase 1: Directory name match in local worktree dirs.
     if let Some(loc) = find_worktree_in_local_dirs(root, worktree_dirs, worktree_name) {
-        info!(elapsed_ms = step_t.elapsed().as_millis() as u64, wt_dir = %loc.wt_dir, "resolved worktree by directory name (local)");
-        return Some(loc);
+        return Some((loc, "directory name (local)"));
     }
 
     // Phase 2: Directory name + branch name match in external dirs (directory preferred).
     if let Some(loc) = find_worktree_in_external_dirs(root, worktree_dirs, worktree_name).await {
-        info!(elapsed_ms = step_t.elapsed().as_millis() as u64, wt_dir = %loc.wt_dir, "found worktree in external dir");
-        return Some(loc);
+        return Some((loc, "external dir"));
     }
 
     // Phase 3: Branch name match in local worktree dirs.
-    if let Some(loc) =
-        find_worktree_by_branch_in_local_dirs(root, worktree_dirs, worktree_name).await
-    {
-        info!(elapsed_ms = step_t.elapsed().as_millis() as u64, wt_dir = %loc.wt_dir, "found worktree by branch name (local)");
-        return Some(loc);
-    }
+    find_worktree_by_branch_in_local_dirs(root, worktree_dirs, worktree_name)
+        .await
+        .map(|loc| (loc, "branch name (local)"))
+}
 
-    // Phase 4: Auto-detected git worktree dir (for new worktree creation).
-    let root_clone = root.clone();
+/// Phases 4–5 of worktree detection: try the git-detected worktree directory,
+/// then fall back to the default. Returns the location and a label describing
+/// which phase matched.
+async fn fallback_worktree_path(
+    root: &std::path::Path,
+    default_wt_dir: &str,
+    worktree_name: &str,
+) -> (WorktreeLocation, &'static str) {
+    let root_clone = root.to_path_buf();
     let git_detected =
         tokio::task::spawn_blocking(move || detect_worktree_dir_from_git(&root_clone))
             .await
             .ok()
             .flatten();
     if let Some(loc) = try_git_detected(root, git_detected.as_deref(), worktree_name) {
-        info!(elapsed_ms = step_t.elapsed().as_millis() as u64, wt_dir = %loc.wt_dir, "using git-detected worktree directory");
-        return Some(loc);
+        return (loc, "git-detected");
     }
 
-    // Phase 5: Default fallback.
+    let loc = default_worktree_location(root, default_wt_dir, worktree_name);
+    (loc, "default")
+}
+
+/// Build a `WorktreeLocation` from the default worktree directory.
+fn default_worktree_location(
+    root: &std::path::Path,
+    default_wt_dir: &str,
+    worktree_name: &str,
+) -> WorktreeLocation {
     let path = root.join(default_wt_dir).join(worktree_name);
     let mount_src = format!("/host-project/{default_wt_dir}/{worktree_name}");
-    info!(elapsed_ms = step_t.elapsed().as_millis() as u64, wt_dir = %default_wt_dir, "using default worktree directory");
-    Some(WorktreeLocation {
+    WorktreeLocation {
         wt_dir: default_wt_dir.to_string(),
         host_path: path,
         container_mount_src: mount_src,
-    })
+    }
 }
 
 fn try_git_detected(
@@ -2199,5 +2230,73 @@ mod tests {
             format!("/host-external-wt/2/a21f/wt/my-branch"),
             "mount source should include the full relative path from the glob root"
         );
+    }
+
+    // --- try_git_detected tests ---
+
+    #[test]
+    fn test_try_git_detected_local_dir() {
+        let root = std::path::Path::new("/projects/my-app");
+        let loc = try_git_detected(root, Some(".worktrees"), "feat-x");
+        assert!(loc.is_some());
+        let loc = loc.unwrap();
+        assert_eq!(loc.wt_dir, ".worktrees");
+        assert_eq!(loc.host_path, root.join(".worktrees").join("feat-x"));
+        assert_eq!(loc.container_mount_src, "/host-project/.worktrees/feat-x");
+    }
+
+    #[test]
+    fn test_try_git_detected_none_when_no_detection() {
+        let root = std::path::Path::new("/projects/my-app");
+        let loc = try_git_detected(root, None, "feat-x");
+        assert!(loc.is_none());
+    }
+
+    #[test]
+    fn test_try_git_detected_none_for_external_dir() {
+        let root = std::path::Path::new("/projects/my-app");
+        // External dirs (starting with ~ or /) should be rejected.
+        let loc = try_git_detected(root, Some("~/external/worktrees"), "feat-x");
+        assert!(loc.is_none());
+    }
+
+    // --- default_worktree_location tests ---
+
+    #[test]
+    fn test_default_worktree_location_paths() {
+        let root = std::path::Path::new("/projects/my-app");
+        let loc = default_worktree_location(root, ".worktrees", "feat-y");
+        assert_eq!(loc.wt_dir, ".worktrees");
+        assert_eq!(loc.host_path, root.join(".worktrees").join("feat-y"));
+        assert_eq!(loc.container_mount_src, "/host-project/.worktrees/feat-y");
+    }
+
+    // --- find_existing_worktree tests ---
+
+    #[tokio::test]
+    async fn test_find_existing_worktree_local_dir_match() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        // Create a matching worktree directory on disk.
+        let wt = root.join(".worktrees").join("feat-z");
+        std::fs::create_dir_all(&wt).unwrap();
+
+        let dirs = vec![".worktrees".to_string()];
+        let result = find_existing_worktree(root, &dirs, "feat-z").await;
+        assert!(result.is_some());
+        let (loc, phase) = result.unwrap();
+        assert_eq!(loc.wt_dir, ".worktrees");
+        assert_eq!(loc.host_path, wt);
+        assert_eq!(phase, "directory name (local)");
+    }
+
+    #[tokio::test]
+    async fn test_find_existing_worktree_no_match() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        // Directory does not exist — no match.
+        let dirs = vec![".worktrees".to_string()];
+        let result = find_existing_worktree(root, &dirs, "nonexistent").await;
+        assert!(result.is_none());
     }
 }
