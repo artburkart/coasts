@@ -1,7 +1,7 @@
 -include .env
 export
 
-.PHONY: lint fix test coverage coverage-text check fmt zip-projects unpack-projects watch \
+.PHONY: lint fix test coverage coverage-text coverage-lcov check zip-projects unpack-projects watch \
        docs-version docs-status translate translate-all doc-search doc-search-all \
        prune run-dind-integration
 

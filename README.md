@@ -208,9 +208,9 @@ coast/
   coast-core/         # Shared types, Coastfile parsing, protocol definitions
   coast-secrets/      # Secret extraction, encryption, keystore
   coast-docker/       # Docker API wrapper, DinD runtime, compose interaction
-  coast-git/          # Git worktree management
   coast-guard/        # Web UI (React + Vite), served by the daemon
   coast-i18n/         # i18n locale files for the CLI
+  coast-update/       # Update checking and installation
   scripts/            # Python build scripts (translation, search index generation)
   docs/               # User-facing documentation (English + translations)
   integrated-examples/  # Example projects and shell-based integration tests
