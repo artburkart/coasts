@@ -7,10 +7,161 @@ use tracing::{info, warn};
 
 use coast_core::error::{CoastError, Result};
 use coast_core::protocol::{CoastEvent, RmRequest, RmResponse};
-use coast_core::types::InstanceStatus;
+use coast_core::types::{CoastInstance, InstanceStatus};
 use coast_docker::runtime::Runtime;
 
 use crate::server::AppState;
+
+/// Check for a dangling Docker container (no DB record) and clean it up.
+///
+/// Returns `true` if a dangling container was found and removed.
+async fn cleanup_dangling_container(
+    docker: &bollard::Docker,
+    project: &str,
+    name: &str,
+) -> Result<bool> {
+    let expected = format!("{project}-coasts-{name}");
+    if docker.inspect_container(&expected, None).await.is_err() {
+        return Ok(false);
+    }
+
+    warn!(
+        name = %name,
+        project = %project,
+        container = %expected,
+        "removing dangling container during rm"
+    );
+    remove_container(docker, &expected).await;
+    remove_isolated_volumes(docker, project, name).await;
+    Ok(true)
+}
+
+/// Set transitional "stopping" status so the UI shows the correct pill during teardown.
+async fn set_stopping_transition(
+    instance: &CoastInstance,
+    state: &AppState,
+    project: &str,
+    name: &str,
+) -> Result<()> {
+    let db = state.db.lock().await;
+    if instance.status == InstanceStatus::CheckedOut {
+        super::clear_checked_out_state(&db, project, name, &InstanceStatus::Stopping)?;
+    } else {
+        let _ = db.update_instance_status(project, name, &InstanceStatus::Stopping);
+    }
+    drop(db);
+    state.emit_event(CoastEvent::InstanceStatusChanged {
+        name: name.to_string(),
+        project: project.to_string(),
+        status: "stopping".to_string(),
+    });
+    Ok(())
+}
+
+/// Kill agent shell processes, close FDs, and delete shell records from the DB.
+///
+/// Takes the DB lock internally so the `StateDb` reference (which is not `Send`)
+/// is not held across the exec_sessions `.await`.
+async fn cleanup_agent_shells(state: &AppState, project: &str, name: &str) {
+    let shells = {
+        let db = state.db.lock().await;
+        match db.list_agent_shells(project, name) {
+            Ok(s) => s,
+            Err(_) => return,
+        }
+    };
+    let mut exec_sessions = state.exec_sessions.lock().await;
+    for shell in &shells {
+        if let Some(ref sid) = shell.session_id {
+            if let Some(session) = exec_sessions.remove(sid) {
+                let _ = nix::sys::signal::kill(
+                    nix::unistd::Pid::from_raw(session.child_pid),
+                    nix::sys::signal::Signal::SIGHUP,
+                );
+                unsafe {
+                    nix::libc::close(session.master_read_fd);
+                    nix::libc::close(session.master_write_fd);
+                }
+            }
+        }
+    }
+    drop(exec_sessions);
+    let db = state.db.lock().await;
+    let _ = db.delete_agent_shells_for_instance(project, name);
+}
+
+/// Stop compose services and the coast container for a running/checked-out instance.
+async fn stop_running_services(docker: &bollard::Docker, container_id: &str) {
+    let runtime = coast_docker::dind::DindRuntime::with_client(docker.clone());
+    let _ = runtime
+        .exec_in_coast(container_id, &["docker", "compose", "down"])
+        .await;
+    let _ = runtime.stop_coast_container(container_id).await;
+}
+
+/// Remove the coast container from the host daemon.
+async fn remove_container(docker: &bollard::Docker, container_id: &str) {
+    let runtime = coast_docker::dind::DindRuntime::with_client(docker.clone());
+    if let Err(e) = runtime.remove_coast_container(container_id).await {
+        warn!(container_id = %container_id, error = %e, "failed to remove container");
+    }
+}
+
+/// Delete isolated volumes matching `coast--{instance}--*` and the cache volume.
+async fn remove_isolated_volumes(docker: &bollard::Docker, project: &str, name: &str) {
+    let prefix = format!("coast--{name}--");
+    if let Ok(volumes) = docker.list_volumes::<String>(None).await {
+        if let Some(vols) = volumes.volumes {
+            for vol in vols {
+                if vol.name.starts_with(&prefix) {
+                    let _ = docker.remove_volume(&vol.name, None).await;
+                    info!(volume = %vol.name, "removed isolated volume");
+                }
+            }
+        }
+    }
+    let cache_vol = coast_docker::dind::dind_cache_volume_name(project, name);
+    let _ = docker.remove_volume(&cache_vol, None).await;
+}
+
+/// Kill socat processes and deallocate ports from the DB.
+fn cleanup_socat_and_ports(db: &crate::state::StateDb, project: &str, name: &str) -> Result<()> {
+    let port_allocs = db.get_port_allocations(project, name)?;
+    for alloc in &port_allocs {
+        if let Some(pid) = alloc.socat_pid {
+            if let Err(e) = crate::port_manager::kill_socat(pid as u32) {
+                warn!(pid = pid, error = %e, "failed to kill socat process");
+            } else if let Err(e) = db.update_socat_pid(project, name, &alloc.logical_name, None) {
+                warn!(
+                    logical_name = %alloc.logical_name,
+                    error = %e,
+                    "failed to clear socat pid after killing process"
+                );
+            }
+        }
+    }
+    db.delete_port_allocations(project, name)?;
+    Ok(())
+}
+
+/// Run all Docker teardown steps: stop services, remove container, delete volumes.
+async fn docker_teardown(instance: &CoastInstance, state: &AppState, project: &str, name: &str) {
+    let Some(ref docker) = state.docker else {
+        return;
+    };
+    let is_active =
+        instance.status == InstanceStatus::Running || instance.status == InstanceStatus::CheckedOut;
+    if is_active {
+        if let Some(ref cid) = instance.container_id {
+            stop_running_services(docker, cid).await;
+        }
+        info!(name = %name, "stopped running instance before removal");
+    }
+    if let Some(ref cid) = instance.container_id {
+        remove_container(docker, cid).await;
+    }
+    remove_isolated_volumes(docker, project, name).await;
+}
 
 /// Handle an rm request.
 ///
@@ -25,7 +176,6 @@ use crate::server::AppState;
 ///
 /// IMPORTANT: `coast rm` does NOT delete shared service data.
 /// Use `coast shared-services rm` for that.
-#[allow(clippy::cognitive_complexity)]
 pub async fn handle(req: RmRequest, state: &AppState) -> Result<RmResponse> {
     info!(name = %req.name, project = %req.project, "handling rm request");
 
@@ -34,35 +184,8 @@ pub async fn handle(req: RmRequest, state: &AppState) -> Result<RmResponse> {
         let db = state.db.lock().await;
         let inst = db.get_instance(&req.project, &req.name)?;
         let Some(inst) = inst else {
-            // Instance not in DB — check for a dangling Docker container and
-            // clean it up so `rm` always leaves a clean state.
-            let expected = format!("{}-coasts-{}", req.project, req.name);
             if let Some(ref docker) = state.docker {
-                if docker.inspect_container(&expected, None).await.is_ok() {
-                    warn!(
-                        name = %req.name,
-                        project = %req.project,
-                        container = %expected,
-                        "removing dangling container during rm"
-                    );
-                    let runtime = coast_docker::dind::DindRuntime::with_client(docker.clone());
-                    if let Err(e) = runtime.remove_coast_container(&expected).await {
-                        warn!(container = %expected, error = %e, "failed to remove dangling container");
-                    }
-                    let vol_prefix = format!("coast--{}--", req.name);
-                    if let Ok(volumes) = docker.list_volumes::<String>(None).await {
-                        if let Some(vols) = volumes.volumes {
-                            for vol in vols {
-                                if vol.name.starts_with(&vol_prefix) {
-                                    let _ = docker.remove_volume(&vol.name, None).await;
-                                    info!(volume = %vol.name, "removed dangling isolated volume");
-                                }
-                            }
-                        }
-                    }
-                    let cache_vol =
-                        coast_docker::dind::dind_cache_volume_name(&req.project, &req.name);
-                    let _ = docker.remove_volume(&cache_vol, None).await;
+                if cleanup_dangling_container(docker, &req.project, &req.name).await? {
                     return Ok(RmResponse { name: req.name });
                 }
             }
@@ -81,108 +204,20 @@ pub async fn handle(req: RmRequest, state: &AppState) -> Result<RmResponse> {
         return Ok(RmResponse { name: req.name });
     }
 
-    // Set transitional status so the UI shows "stopping" pill during teardown
     if instance.status == InstanceStatus::Running || instance.status == InstanceStatus::CheckedOut {
-        let db = state.db.lock().await;
-        if instance.status == InstanceStatus::CheckedOut {
-            super::clear_checked_out_state(
-                &db,
-                &req.project,
-                &req.name,
-                &InstanceStatus::Stopping,
-            )?;
-        } else {
-            let _ = db.update_instance_status(&req.project, &req.name, &InstanceStatus::Stopping);
-        }
-        drop(db);
-        state.emit_event(CoastEvent::InstanceStatusChanged {
-            name: req.name.clone(),
-            project: req.project.clone(),
-            status: "stopping".to_string(),
-        });
+        set_stopping_transition(&instance, state, &req.project, &req.name).await?;
     }
 
     // Phase 2: Docker operations (unlocked)
-    if instance.status == InstanceStatus::Running || instance.status == InstanceStatus::CheckedOut {
-        if let Some(ref container_id) = instance.container_id {
-            if let Some(ref docker) = state.docker {
-                let runtime = coast_docker::dind::DindRuntime::with_client(docker.clone());
-                let _ = runtime
-                    .exec_in_coast(container_id, &["docker", "compose", "down"])
-                    .await;
-                let _ = runtime.stop_coast_container(container_id).await;
-            }
-        }
-        info!(name = %req.name, "stopped running instance before removal");
-    }
-
-    // Step 3: Remove the coast container
-    if let Some(ref container_id) = instance.container_id {
-        if let Some(ref docker) = state.docker {
-            let runtime = coast_docker::dind::DindRuntime::with_client(docker.clone());
-            if let Err(e) = runtime.remove_coast_container(container_id).await {
-                warn!(container_id = %container_id, error = %e, "failed to remove container");
-            }
-        }
-    }
-
-    // Step 4: Delete isolated volumes (best-effort, requires Docker)
-    if let Some(ref docker) = state.docker {
-        // Volume names follow the pattern: coast--{instance}--{volume_name}
-        let prefix = format!("coast--{}--", req.name);
-        if let Ok(volumes) = docker.list_volumes::<String>(None).await {
-            if let Some(volumes_list) = volumes.volumes {
-                for vol in volumes_list {
-                    if vol.name.starts_with(&prefix) {
-                        let _ = docker.remove_volume(&vol.name, None).await;
-                        info!(volume = %vol.name, "removed isolated volume");
-                    }
-                }
-            }
-        }
-    }
+    docker_teardown(&instance, state, &req.project, &req.name).await;
 
     // Phase 3: DB cleanup (locked)
+    {
+        let db = state.db.lock().await;
+        cleanup_socat_and_ports(&db, &req.project, &req.name)?;
+    }
+    cleanup_agent_shells(state, &req.project, &req.name).await;
     let db = state.db.lock().await;
-    let port_allocs = db.get_port_allocations(&req.project, &req.name)?;
-    for alloc in &port_allocs {
-        if let Some(pid) = alloc.socat_pid {
-            if let Err(e) = crate::port_manager::kill_socat(pid as u32) {
-                warn!(pid = pid, error = %e, "failed to kill socat process");
-            } else if let Err(e) =
-                db.update_socat_pid(&req.project, &req.name, &alloc.logical_name, None)
-            {
-                warn!(
-                    logical_name = %alloc.logical_name,
-                    error = %e,
-                    "failed to clear socat pid after killing process"
-                );
-            }
-        }
-    }
-
-    // Step 6: Deallocate ports
-    db.delete_port_allocations(&req.project, &req.name)?;
-
-    // Step 6b: Clean up agent shells
-    if let Ok(shells) = db.list_agent_shells(&req.project, &req.name) {
-        let mut exec_sessions = state.exec_sessions.lock().await;
-        for shell in &shells {
-            if let Some(ref sid) = shell.session_id {
-                if let Some(session) = exec_sessions.remove(sid) {
-                    let _ = nix::sys::signal::kill(
-                        nix::unistd::Pid::from_raw(session.child_pid),
-                        nix::sys::signal::Signal::SIGHUP,
-                    );
-                    unsafe {
-                        nix::libc::close(session.master_read_fd);
-                        nix::libc::close(session.master_write_fd);
-                    }
-                }
-            }
-        }
-        let _ = db.delete_agent_shells_for_instance(&req.project, &req.name);
-    }
 
     // Step 7: Delete instance from state DB
     db.delete_instance(&req.project, &req.name)?;
@@ -201,7 +236,7 @@ pub async fn handle(req: RmRequest, state: &AppState) -> Result<RmResponse> {
 mod tests {
     use super::*;
     use crate::state::StateDb;
-    use coast_core::types::{CoastInstance, PortMapping, RuntimeType};
+    use coast_core::types::{PortMapping, RuntimeType};
 
     fn test_state() -> AppState {
         AppState::new_for_testing(StateDb::open_in_memory().unwrap())
@@ -361,5 +396,50 @@ mod tests {
         let db = state.db.lock().await;
         let instance = db.get_instance("my-app", "queued-one").unwrap();
         assert!(instance.is_none());
+    }
+
+    // --- set_stopping_transition tests ---
+
+    #[tokio::test]
+    async fn test_stopping_transition_running() {
+        let state = test_state();
+        let instance = make_instance("feat-a", "my-app", InstanceStatus::Running);
+        {
+            let db = state.db.lock().await;
+            db.insert_instance(&instance).unwrap();
+        }
+
+        set_stopping_transition(&instance, &state, "my-app", "feat-a")
+            .await
+            .unwrap();
+
+        let db = state.db.lock().await;
+        let updated = db.get_instance("my-app", "feat-a").unwrap().unwrap();
+        assert_eq!(updated.status, InstanceStatus::Stopping);
+    }
+
+    #[tokio::test]
+    async fn test_stopping_transition_emits_event() {
+        let state = test_state();
+        let mut rx = state.event_bus.subscribe();
+        let instance = make_instance("feat-c", "my-app", InstanceStatus::Running);
+        {
+            let db = state.db.lock().await;
+            db.insert_instance(&instance).unwrap();
+        }
+
+        set_stopping_transition(&instance, &state, "my-app", "feat-c")
+            .await
+            .unwrap();
+
+        let mut found = false;
+        while let Ok(event) = rx.try_recv() {
+            if let CoastEvent::InstanceStatusChanged { name, status, .. } = event {
+                assert_eq!(name, "feat-c");
+                assert_eq!(status, "stopping");
+                found = true;
+            }
+        }
+        assert!(found, "expected InstanceStatusChanged event");
     }
 }
