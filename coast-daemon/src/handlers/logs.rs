@@ -9,7 +9,7 @@ use tracing::info;
 use coast_core::error::{CoastError, Result};
 use coast_core::protocol::{LogsRequest, LogsResponse};
 use coast_core::types::InstanceStatus;
-use coast_docker::runtime::Runtime;
+use coast_docker::runtime::{ExecResult, Runtime};
 
 use crate::server::AppState;
 
@@ -92,8 +92,38 @@ fn compose_logs_cmd(req: &LogsRequest, build_id: Option<&str>) -> Vec<String> {
     ctx.compose_shell(&subcmd)
 }
 
+/// Pick the most useful output from a command: prefer stdout, fall back to stderr.
+fn select_output(result: &ExecResult) -> String {
+    if result.stdout.is_empty() {
+        result.stderr.clone()
+    } else {
+        result.stdout.clone()
+    }
+}
+
+/// When both bare and compose exist and a specific service is requested,
+/// detect which kind the service is and build the appropriate command.
+async fn resolve_service_log_command(
+    docker: &bollard::Docker,
+    container_id: &str,
+    service: &str,
+    req: &LogsRequest,
+    build_id: Option<&str>,
+) -> Vec<String> {
+    if is_service_bare(docker, container_id, service).await {
+        let tail_cmd = crate::bare_services::generate_logs_command(
+            Some(service),
+            req.tail,
+            req.tail_all,
+            req.follow,
+        );
+        vec!["sh".to_string(), "-c".to_string(), tail_cmd]
+    } else {
+        compose_logs_cmd(req, build_id)
+    }
+}
+
 /// Handle a logs request.
-#[allow(clippy::cognitive_complexity)]
 pub async fn handle(req: LogsRequest, state: &AppState) -> Result<LogsResponse> {
     info!(
         name = %req.name,
@@ -120,18 +150,14 @@ pub async fn handle(req: LogsRequest, state: &AppState) -> Result<LogsResponse> 
 
     if let Some(ref service) = req.service {
         if has_bare && has_compose {
-            let svc_is_bare = is_service_bare(docker, &container_id, service).await;
-            let cmd_parts = if svc_is_bare {
-                let tail_cmd = crate::bare_services::generate_logs_command(
-                    Some(service.as_str()),
-                    req.tail,
-                    req.tail_all,
-                    req.follow,
-                );
-                vec!["sh".to_string(), "-c".to_string(), tail_cmd]
-            } else {
-                compose_logs_cmd(&req, build_id.as_deref())
-            };
+            let cmd_parts = resolve_service_log_command(
+                docker,
+                &container_id,
+                service,
+                &req,
+                build_id.as_deref(),
+            )
+            .await;
             let cmd_refs: Vec<&str> = cmd_parts.iter().map(std::string::String::as_str).collect();
             let exec_result = runtime
                 .exec_in_coast(&container_id, &cmd_refs)
@@ -142,12 +168,9 @@ pub async fn handle(req: LogsRequest, state: &AppState) -> Result<LogsResponse> 
                         req.name, e
                     ))
                 })?;
-            let output = if exec_result.stdout.is_empty() {
-                exec_result.stderr.clone()
-            } else {
-                exec_result.stdout.clone()
-            };
-            return Ok(LogsResponse { output });
+            return Ok(LogsResponse {
+                output: select_output(&exec_result),
+            });
         }
     }
 
@@ -169,12 +192,9 @@ pub async fn handle(req: LogsRequest, state: &AppState) -> Result<LogsResponse> 
                     req.name, e
                 ))
             })?;
-        let output = if exec_result.stdout.is_empty() {
-            exec_result.stderr.clone()
-        } else {
-            exec_result.stdout.clone()
-        };
-        return Ok(LogsResponse { output });
+        return Ok(LogsResponse {
+            output: select_output(&exec_result),
+        });
     }
 
     let compose_cmd = compose_logs_cmd(&req, build_id.as_deref());
@@ -191,11 +211,7 @@ pub async fn handle(req: LogsRequest, state: &AppState) -> Result<LogsResponse> 
                 req.name, e
             ))
         })?;
-    let mut output = if exec_result.stdout.is_empty() {
-        exec_result.stderr.clone()
-    } else {
-        exec_result.stdout.clone()
-    };
+    let mut output = select_output(&exec_result);
 
     if has_bare && req.service.is_none() && !req.follow {
         let tail_cmd =
@@ -203,16 +219,12 @@ pub async fn handle(req: LogsRequest, state: &AppState) -> Result<LogsResponse> 
         let bare_parts = ["sh".to_string(), "-c".to_string(), tail_cmd];
         let bare_refs: Vec<&str> = bare_parts.iter().map(std::string::String::as_str).collect();
         if let Ok(bare_result) = runtime.exec_in_coast(&container_id, &bare_refs).await {
-            let bare_output = if bare_result.stdout.is_empty() {
-                &bare_result.stderr
-            } else {
-                &bare_result.stdout
-            };
+            let bare_output = select_output(&bare_result);
             if !bare_output.is_empty() {
                 if !output.is_empty() && !output.ends_with('\n') {
                     output.push('\n');
                 }
-                output.push_str(bare_output);
+                output.push_str(&bare_output);
             }
         }
     }
@@ -517,5 +529,33 @@ mod tests {
             follow: true,
         };
         assert_eq!(resolve_tail_arg(&req), "all");
+    }
+
+    // --- select_output tests ---
+
+    fn exec_result(stdout: &str, stderr: &str) -> ExecResult {
+        ExecResult {
+            exit_code: 0,
+            stdout: stdout.to_string(),
+            stderr: stderr.to_string(),
+        }
+    }
+
+    #[test]
+    fn test_select_output_prefers_stdout() {
+        let result = exec_result("hello from stdout", "some stderr");
+        assert_eq!(select_output(&result), "hello from stdout");
+    }
+
+    #[test]
+    fn test_select_output_falls_back_to_stderr() {
+        let result = exec_result("", "error output");
+        assert_eq!(select_output(&result), "error output");
+    }
+
+    #[test]
+    fn test_select_output_both_empty() {
+        let result = exec_result("", "");
+        assert_eq!(select_output(&result), "");
     }
 }
