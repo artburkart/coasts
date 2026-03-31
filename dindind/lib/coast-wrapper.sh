@@ -43,10 +43,13 @@ if [ -f Coastfile ]; then
   forward_ports=($(printf '%s\n' "${forward_ports[@]}" | sort -u))
 fi
 
+# Grab the instance name from `coast run <name>` before starting the background job.
+instance_name="${2:-}"
+
 # Start background job to set up port forwarding as soon as the Coast DinD container appears.
 # Uses docker exec directly (not coast exec) because coast exec requires provisioning
 # to complete, which is blocked waiting for compose health -- creating a deadlock.
-if [ ${#forward_ports[@]} -gt 0 ]; then
+if [ ${#forward_ports[@]} -gt 0 ] && [ -n "$instance_name" ]; then
   # Resolve the project name from the Coastfile to predict the container name.
   coast_project=$(grep -E '^name\s*=' Coastfile | head -1 | sed 's/.*=\s*"\{0,1\}\([^"]*\)"\{0,1\}/\1/' | tr -d ' ')
   container_name="${coast_project}-coasts-${instance_name}"
@@ -76,21 +79,5 @@ rc=$?
 
 # Clean up background forwarder
 [ -n "${FORWARD_PID:-}" ] && kill "$FORWARD_PID" 2>/dev/null; wait "$FORWARD_PID" 2>/dev/null
-
-if [ $rc -ne 0 ]; then
-  exit $rc
-fi
-
-instance_name="${2:-}"
-if [ -z "$instance_name" ]; then
-  exit $rc
-fi
-
-# Parse egress ports from the Coastfile in the current directory
-if [ ! -f Coastfile ]; then
-  exit $rc
-fi
-
-exit $rc
 
 exit $rc
