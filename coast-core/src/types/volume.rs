@@ -33,6 +33,27 @@ pub struct VolumeConfig {
     pub snapshot_source: Option<String>,
 }
 
+/// Configuration for a host bind mount declared in the Coastfile.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HostMountConfig {
+    pub name: String,
+    pub service: String,
+    pub source: PathBuf,
+    pub mount: PathBuf,
+    #[serde(default)]
+    pub read_only: bool,
+}
+
+/// Configuration for a build-time secret declared in the Coastfile.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BuildSecretConfig {
+    pub name: String,
+    pub id: String,
+    pub extractor: String,
+    pub params: HashMap<String, String>,
+    pub ttl: Option<String>,
+}
+
 /// Configuration for a shared service in the Coastfile.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export)]

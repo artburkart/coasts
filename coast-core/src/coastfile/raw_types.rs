@@ -16,9 +16,13 @@ pub(super) struct RawCoastfile {
     #[serde(default)]
     pub secrets: HashMap<String, RawSecretConfig>,
     #[serde(default)]
+    pub build_secrets: HashMap<String, RawBuildSecretConfig>,
+    #[serde(default)]
     pub inject: Option<RawInjectConfig>,
     #[serde(default)]
     pub volumes: HashMap<String, RawVolumeConfig>,
+    #[serde(default)]
+    pub host_mounts: HashMap<String, RawHostMountConfig>,
     #[serde(default)]
     pub shared_services: HashMap<String, RawSharedServiceConfig>,
     #[serde(default)]
@@ -56,6 +60,10 @@ pub(super) struct RawUnsetConfig {
     pub shared_services: Vec<String>,
     #[serde(default)]
     pub volumes: Vec<String>,
+    #[serde(default)]
+    pub build_secrets: Vec<String>,
+    #[serde(default)]
+    pub host_mounts: Vec<String>,
     #[serde(default)]
     pub mcp: Vec<String>,
     #[serde(default)]
@@ -143,6 +151,17 @@ pub(super) struct RawSecretConfig {
 }
 
 #[derive(Debug, Deserialize)]
+pub(super) struct RawBuildSecretConfig {
+    #[serde(default)]
+    pub id: Option<String>,
+    pub extractor: String,
+    #[serde(default)]
+    pub ttl: Option<String>,
+    #[serde(flatten)]
+    pub params: HashMap<String, toml::Value>,
+}
+
+#[derive(Debug, Deserialize)]
 pub(super) struct RawInjectConfig {
     #[serde(default)]
     pub env: Vec<String>,
@@ -157,6 +176,15 @@ pub(super) struct RawVolumeConfig {
     pub mount: String,
     #[serde(default)]
     pub snapshot_source: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(super) struct RawHostMountConfig {
+    pub service: String,
+    pub source: String,
+    pub mount: String,
+    #[serde(default)]
+    pub read_only: bool,
 }
 
 #[derive(Debug, Deserialize)]

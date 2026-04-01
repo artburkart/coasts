@@ -9,6 +9,29 @@ use tracing::info;
 
 use coast_core::error::{CoastError, Result};
 
+/// A single `--build-arg` entry for `docker build`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ComposeBuildArg {
+    pub key: String,
+    pub value: Option<String>,
+}
+
+/// A build secret reference declared under compose `build.secrets`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ComposeBuildSecretRef {
+    /// Name of the Coast build secret to resolve.
+    pub source: String,
+    /// BuildKit secret id exposed to the Dockerfile.
+    pub target: String,
+}
+
+/// A resolved build secret file to pass to `docker build --secret`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DockerBuildSecret {
+    pub id: String,
+    pub src: PathBuf,
+}
+
 /// A `build:` directive found in a compose service.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ComposeBuildDirective {
@@ -18,6 +41,12 @@ pub struct ComposeBuildDirective {
     pub context: String,
     /// Optional Dockerfile path (relative to context).
     pub dockerfile: Option<String>,
+    /// Optional build target stage.
+    pub target: Option<String>,
+    /// Compose build args to pass through to docker build.
+    pub args: Vec<ComposeBuildArg>,
+    /// Build secrets referenced by this service.
+    pub secrets: Vec<ComposeBuildSecretRef>,
     /// The coast-built image tag (e.g., "coast-built/my-project/app:latest").
     pub coast_image_tag: String,
 }
@@ -128,8 +157,8 @@ fn parse_compose_file_inner(
 
         if has_build {
             let build_val = value.get("build").unwrap();
-            let (context, dockerfile) = match build_val {
-                serde_yaml::Value::String(s) => (s.clone(), None),
+            let (context, dockerfile, target, args, secrets) = match build_val {
+                serde_yaml::Value::String(s) => (s.clone(), None, None, Vec::new(), Vec::new()),
                 serde_yaml::Value::Mapping(m) => {
                     let ctx = m
                         .get(serde_yaml::Value::String("context".to_string()))
@@ -140,15 +169,27 @@ fn parse_compose_file_inner(
                         .get(serde_yaml::Value::String("dockerfile".to_string()))
                         .and_then(|v| v.as_str())
                         .map(std::string::ToString::to_string);
-                    (ctx, df)
+                    let target = m
+                        .get(serde_yaml::Value::String("target".to_string()))
+                        .and_then(|v| v.as_str())
+                        .map(std::string::ToString::to_string);
+                    let args =
+                        parse_build_args(m.get(serde_yaml::Value::String("args".to_string())));
+                    let secrets = parse_build_secrets(
+                        m.get(serde_yaml::Value::String("secrets".to_string())),
+                    );
+                    (ctx, df, target, args, secrets)
                 }
-                _ => (".".to_string(), None),
+                _ => (".".to_string(), None, None, Vec::new(), Vec::new()),
             };
 
             build_directives.push(ComposeBuildDirective {
                 service_name: service_name.clone(),
                 context,
                 dockerfile,
+                target,
+                args,
+                secrets,
                 coast_image_tag: coast_built_image_tag(project, &service_name),
             });
         } else if has_image {
@@ -164,6 +205,77 @@ fn parse_compose_file_inner(
         build_directives,
         image_refs,
     })
+}
+
+fn parse_build_args(value: Option<&serde_yaml::Value>) -> Vec<ComposeBuildArg> {
+    match value {
+        Some(serde_yaml::Value::Mapping(map)) => map
+            .iter()
+            .filter_map(|(key, value)| {
+                let key = key.as_str()?.to_string();
+                let value = match value {
+                    serde_yaml::Value::Null => None,
+                    serde_yaml::Value::String(s) => Some(s.clone()),
+                    other => Some(match serde_yaml::to_string(other) {
+                        Ok(rendered) => rendered.trim().to_string(),
+                        Err(_) => other.as_str().unwrap_or_default().to_string(),
+                    }),
+                };
+                Some(ComposeBuildArg { key, value })
+            })
+            .collect(),
+        Some(serde_yaml::Value::Sequence(seq)) => seq
+            .iter()
+            .filter_map(serde_yaml::Value::as_str)
+            .filter(|entry| !entry.trim().is_empty())
+            .map(|entry| {
+                if let Some((key, value)) = entry.split_once('=') {
+                    ComposeBuildArg {
+                        key: key.to_string(),
+                        value: Some(value.to_string()),
+                    }
+                } else {
+                    ComposeBuildArg {
+                        key: entry.to_string(),
+                        value: None,
+                    }
+                }
+            })
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+fn parse_build_secrets(value: Option<&serde_yaml::Value>) -> Vec<ComposeBuildSecretRef> {
+    let Some(serde_yaml::Value::Sequence(seq)) = value else {
+        return Vec::new();
+    };
+
+    seq.iter()
+        .filter_map(|entry| match entry {
+            serde_yaml::Value::String(name) if !name.trim().is_empty() => {
+                Some(ComposeBuildSecretRef {
+                    source: name.clone(),
+                    target: name.clone(),
+                })
+            }
+            serde_yaml::Value::Mapping(map) => {
+                let source = map
+                    .get(serde_yaml::Value::String("source".to_string()))
+                    .and_then(|v| v.as_str())
+                    .filter(|v| !v.trim().is_empty())?
+                    .to_string();
+                let target = map
+                    .get(serde_yaml::Value::String("target".to_string()))
+                    .and_then(|v| v.as_str())
+                    .filter(|v| !v.trim().is_empty())
+                    .map(std::string::ToString::to_string)
+                    .unwrap_or_else(|| source.clone());
+                Some(ComposeBuildSecretRef { source, target })
+            }
+            _ => None,
+        })
+        .collect()
 }
 
 /// Rewrite a compose file to replace `build:` directives with `image:` references.
@@ -293,7 +405,11 @@ pub fn parse_dockerfile_base_images(dockerfile_content: &str) -> Vec<String> {
 /// Construct the `docker build` command for a build directive.
 ///
 /// Returns the command as a vector of strings suitable for `tokio::process::Command`.
-pub fn docker_build_cmd(directive: &ComposeBuildDirective, compose_dir: &Path) -> Vec<String> {
+pub fn docker_build_cmd(
+    directive: &ComposeBuildDirective,
+    compose_dir: &Path,
+    build_secrets: &[DockerBuildSecret],
+) -> Vec<String> {
     let mut cmd = vec![
         "docker".to_string(),
         "build".to_string(),
@@ -312,6 +428,24 @@ pub fn docker_build_cmd(directive: &ComposeBuildDirective, compose_dir: &Path) -
         );
     }
 
+    if let Some(ref target) = directive.target {
+        cmd.push("--target".to_string());
+        cmd.push(target.clone());
+    }
+
+    for arg in &directive.args {
+        cmd.push("--build-arg".to_string());
+        cmd.push(match &arg.value {
+            Some(value) => format!("{}={value}", arg.key),
+            None => arg.key.clone(),
+        });
+    }
+
+    for secret in build_secrets {
+        cmd.push("--secret".to_string());
+        cmd.push(format!("id={},src={}", secret.id, secret.src.display()));
+    }
+
     cmd.push(compose_dir.join(&directive.context).display().to_string());
 
     cmd
@@ -325,8 +459,9 @@ pub async fn build_and_cache_image(
     directive: &ComposeBuildDirective,
     compose_dir: &Path,
     cache_dir: &Path,
+    build_secrets: &[DockerBuildSecret],
 ) -> Result<PathBuf> {
-    let cmd_args = docker_build_cmd(directive, compose_dir);
+    let cmd_args = docker_build_cmd(directive, compose_dir, build_secrets);
     info!(
         service = %directive.service_name,
         tag = %directive.coast_image_tag,
@@ -641,9 +776,12 @@ services:
             service_name: "app".to_string(),
             context: ".".to_string(),
             dockerfile: None,
+            target: None,
+            args: Vec::new(),
+            secrets: Vec::new(),
             coast_image_tag: "coast-built/proj/app:latest".to_string(),
         };
-        let cmd = docker_build_cmd(&directive, Path::new("/home/user/project"));
+        let cmd = docker_build_cmd(&directive, Path::new("/home/user/project"), &[]);
         assert_eq!(cmd[0], "docker");
         assert_eq!(cmd[1], "build");
         assert_eq!(cmd[2], "-t");
@@ -657,9 +795,12 @@ services:
             service_name: "app".to_string(),
             context: "./docker".to_string(),
             dockerfile: Some("Dockerfile.prod".to_string()),
+            target: None,
+            args: Vec::new(),
+            secrets: Vec::new(),
             coast_image_tag: "coast-built/proj/app:latest".to_string(),
         };
-        let cmd = docker_build_cmd(&directive, Path::new("/project"));
+        let cmd = docker_build_cmd(&directive, Path::new("/project"), &[]);
         assert_eq!(cmd[0], "docker");
         assert_eq!(cmd[1], "build");
         assert_eq!(cmd[2], "-t");
@@ -675,15 +816,17 @@ services:
             service_name: "worker".to_string(),
             context: "./services/worker".to_string(),
             dockerfile: None,
+            target: None,
+            args: Vec::new(),
+            secrets: Vec::new(),
             coast_image_tag: "coast-built/proj/worker:latest".to_string(),
         };
-        let cmd = docker_build_cmd(&directive, Path::new("/app"));
+        let cmd = docker_build_cmd(&directive, Path::new("/app"), &[]);
         assert_eq!(cmd.last().unwrap(), "/app/./services/worker");
     }
 
     #[test]
     fn test_parse_build_with_extra_fields() {
-        // build: can have args, target, etc. — we only care about context and dockerfile
         let yaml = r#"
 services:
   app:
@@ -701,6 +844,78 @@ services:
             result.build_directives[0].dockerfile,
             Some("Dockerfile".to_string())
         );
+        assert_eq!(
+            result.build_directives[0].target.as_deref(),
+            Some("builder")
+        );
+        assert_eq!(
+            result.build_directives[0].args,
+            vec![ComposeBuildArg {
+                key: "NODE_ENV".to_string(),
+                value: Some("production".to_string())
+            }]
+        );
+    }
+
+    #[test]
+    fn test_parse_build_secrets_short_and_long_form() {
+        let yaml = r#"
+services:
+  app:
+    build:
+      context: .
+      secrets:
+        - npm_token
+        - source: github_token
+          target: gh_token
+"#;
+        let result = parse_compose_file(yaml, "proj").unwrap();
+        assert_eq!(
+            result.build_directives[0].secrets,
+            vec![
+                ComposeBuildSecretRef {
+                    source: "npm_token".to_string(),
+                    target: "npm_token".to_string(),
+                },
+                ComposeBuildSecretRef {
+                    source: "github_token".to_string(),
+                    target: "gh_token".to_string(),
+                }
+            ]
+        );
+    }
+
+    #[test]
+    fn test_docker_build_cmd_includes_target_args_and_secrets() {
+        let directive = ComposeBuildDirective {
+            service_name: "app".to_string(),
+            context: ".".to_string(),
+            dockerfile: Some("Dockerfile".to_string()),
+            target: Some("runtime".to_string()),
+            args: vec![ComposeBuildArg {
+                key: "NODE_ENV".to_string(),
+                value: Some("production".to_string()),
+            }],
+            secrets: vec![ComposeBuildSecretRef {
+                source: "npm_token".to_string(),
+                target: "npm_token".to_string(),
+            }],
+            coast_image_tag: "coast-built/proj/app:latest".to_string(),
+        };
+        let cmd = docker_build_cmd(
+            &directive,
+            Path::new("/project"),
+            &[DockerBuildSecret {
+                id: "npm_token".to_string(),
+                src: PathBuf::from("/tmp/npm_token"),
+            }],
+        );
+        assert!(cmd.contains(&"--target".to_string()));
+        assert!(cmd.contains(&"runtime".to_string()));
+        assert!(cmd.contains(&"--build-arg".to_string()));
+        assert!(cmd.contains(&"NODE_ENV=production".to_string()));
+        assert!(cmd.contains(&"--secret".to_string()));
+        assert!(cmd.contains(&"id=npm_token,src=/tmp/npm_token".to_string()));
     }
 
     #[test]

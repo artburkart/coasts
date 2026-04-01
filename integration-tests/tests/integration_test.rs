@@ -381,6 +381,7 @@ fn test_protocol_roundtrip_all_request_variants() {
         Request::Build(BuildRequest {
             coastfile_path: PathBuf::from("/home/user/Coastfile"),
             refresh: true,
+            env_overrides: std::collections::HashMap::new(),
         }),
         Request::Run(RunRequest {
             name: "feature-oauth".to_string(),

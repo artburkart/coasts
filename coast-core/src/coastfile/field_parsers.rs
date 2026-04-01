@@ -4,9 +4,10 @@ use std::path::{Component, Path, PathBuf};
 
 use crate::error::{CoastError, Result};
 use crate::types::{
-    AssignAction, AssignConfig, BareServiceConfig, InjectType, McpClientConnectorConfig,
-    McpClientFormat, McpProxyMode, McpServerConfig, RestartPolicy, SecretConfig, SetupFileConfig,
-    SharedServiceConfig, SharedServicePort, VolumeConfig, VolumeStrategy,
+    AssignAction, AssignConfig, BareServiceConfig, BuildSecretConfig, HostMountConfig, InjectType,
+    McpClientConnectorConfig, McpClientFormat, McpProxyMode, McpServerConfig, RestartPolicy,
+    SecretConfig, SetupFileConfig, SharedServiceConfig, SharedServicePort, VolumeConfig,
+    VolumeStrategy,
 };
 
 use super::raw_types::*;
@@ -44,6 +45,36 @@ impl Coastfile {
         }
 
         Ok(secrets)
+    }
+
+    pub(super) fn parse_build_secrets(
+        raw_build_secrets: HashMap<String, RawBuildSecretConfig>,
+    ) -> Result<Vec<BuildSecretConfig>> {
+        let mut build_secrets = Vec::new();
+
+        for (name, raw) in raw_build_secrets {
+            let mut params = HashMap::new();
+            for (key, value) in raw.params {
+                if key == "id" || key == "extractor" || key == "ttl" {
+                    continue;
+                }
+                let string_value = match value {
+                    toml::Value::String(s) => s,
+                    other => other.to_string(),
+                };
+                params.insert(key, string_value);
+            }
+
+            build_secrets.push(BuildSecretConfig {
+                id: raw.id.unwrap_or_else(|| name.clone()),
+                name,
+                extractor: raw.extractor,
+                params,
+                ttl: raw.ttl,
+            });
+        }
+
+        Ok(build_secrets)
     }
 
     pub(super) fn parse_setup_files(
@@ -130,6 +161,77 @@ impl Coastfile {
         }
 
         Ok(volumes)
+    }
+
+    pub(super) fn parse_host_mounts(
+        raw_mounts: HashMap<String, RawHostMountConfig>,
+        project_root: &Path,
+    ) -> Result<Vec<HostMountConfig>> {
+        let mut mounts = Vec::new();
+
+        for (name, raw) in raw_mounts {
+            let service = raw.service.trim().to_string();
+            if service.is_empty() {
+                return Err(CoastError::coastfile(format!(
+                    "host_mount '{name}': service cannot be empty"
+                )));
+            }
+
+            let source = raw.source.trim();
+            if source.is_empty() {
+                return Err(CoastError::coastfile(format!(
+                    "host_mount '{name}': source cannot be empty"
+                )));
+            }
+
+            let mount = raw.mount.trim().to_string();
+            if mount.is_empty() {
+                return Err(CoastError::coastfile(format!(
+                    "host_mount '{name}': mount cannot be empty"
+                )));
+            }
+
+            let mount_path = PathBuf::from(&mount);
+            if !mount_path.is_absolute() {
+                return Err(CoastError::coastfile(format!(
+                    "host_mount '{name}': mount '{}' must be an absolute container path",
+                    mount
+                )));
+            }
+            if mount_path
+                .components()
+                .any(|component| matches!(component, Component::ParentDir))
+            {
+                return Err(CoastError::coastfile(format!(
+                    "host_mount '{name}': mount '{}' must not contain '..'",
+                    mount
+                )));
+            }
+
+            mounts.push(HostMountConfig {
+                name,
+                service,
+                source: Coastfile::resolve_worktree_dir(project_root, source),
+                mount: mount_path,
+                read_only: raw.read_only,
+            });
+        }
+
+        for (idx, mount) in mounts.iter().enumerate() {
+            for other in &mounts[idx + 1..] {
+                if mount.service == other.service && mount.mount == other.mount {
+                    return Err(CoastError::coastfile(format!(
+                        "host_mounts '{}' and '{}' both target service '{}' at mount '{}'",
+                        mount.name,
+                        other.name,
+                        mount.service,
+                        mount.mount.display()
+                    )));
+                }
+            }
+        }
+
+        Ok(mounts)
     }
 
     pub(super) fn parse_shared_services(
