@@ -18,8 +18,9 @@ use std::path::{Path, PathBuf};
 
 use crate::error::{CoastError, Result};
 use crate::types::{
-    AssignConfig, BareServiceConfig, HostInjectConfig, McpClientConnectorConfig, McpServerConfig,
-    OmitConfig, RuntimeType, SecretConfig, SetupConfig, SharedServiceConfig, VolumeConfig,
+    AssignConfig, BareServiceConfig, BuildSecretConfig, HostInjectConfig, HostMountConfig,
+    McpClientConnectorConfig, McpServerConfig, OmitConfig, RuntimeType, SecretConfig, SetupConfig,
+    SharedServiceConfig, VolumeConfig,
 };
 
 use raw_types::*;
@@ -42,10 +43,14 @@ pub struct Coastfile {
     pub primary_port: Option<String>,
     /// Secret configurations.
     pub secrets: Vec<SecretConfig>,
+    /// Build-only secret configurations.
+    pub build_secrets: Vec<BuildSecretConfig>,
     /// Host injection config.
     pub inject: HostInjectConfig,
     /// Volume configurations.
     pub volumes: Vec<VolumeConfig>,
+    /// Additional host bind mounts for compose services.
+    pub host_mounts: Vec<HostMountConfig>,
     /// Shared service configurations.
     pub shared_services: Vec<SharedServiceConfig>,
     /// Coast container setup configuration.
@@ -284,11 +289,13 @@ impl Coastfile {
             healthcheck: HashMap::new(),
             primary_port: None,
             secrets: vec![],
+            build_secrets: vec![],
             inject: HostInjectConfig {
                 env: vec![],
                 files: vec![],
             },
             volumes: vec![],
+            host_mounts: vec![],
             shared_services: vec![],
             setup: SetupConfig::default(),
             project_root: project_root.to_path_buf(),
@@ -470,11 +477,21 @@ impl Coastfile {
             Self::merge_named_items(base.secrets, Self::parse_secrets(raw.secrets)?, |secret| {
                 secret.name.as_str()
             });
+        let build_secrets = Self::merge_named_items(
+            base.build_secrets,
+            Self::parse_build_secrets(raw.build_secrets)?,
+            |secret| secret.name.as_str(),
+        );
         let inject = Self::merge_inject(base.inject, raw.inject);
         let volumes =
             Self::merge_named_items(base.volumes, Self::parse_volumes(raw.volumes)?, |volume| {
                 volume.name.as_str()
             });
+        let host_mounts = Self::merge_named_items(
+            base.host_mounts,
+            Self::parse_host_mounts(raw.host_mounts, project_root)?,
+            |mount| mount.name.as_str(),
+        );
         let shared_services = Self::merge_named_items(
             base.shared_services,
             Self::parse_shared_services(raw.shared_services)?,
@@ -551,8 +568,10 @@ impl Coastfile {
             healthcheck: raw.healthcheck,
             primary_port,
             secrets,
+            build_secrets,
             inject,
             volumes,
+            host_mounts,
             shared_services,
             setup,
             project_root: resolved_root,
@@ -578,6 +597,9 @@ impl Coastfile {
         for name in &unset.secrets {
             coastfile.secrets.retain(|s| s.name != *name);
         }
+        for name in &unset.build_secrets {
+            coastfile.build_secrets.retain(|s| s.name != *name);
+        }
         for name in &unset.ports {
             coastfile.ports.remove(name);
         }
@@ -586,6 +608,9 @@ impl Coastfile {
         }
         for name in &unset.volumes {
             coastfile.volumes.retain(|v| v.name != *name);
+        }
+        for name in &unset.host_mounts {
+            coastfile.host_mounts.retain(|m| m.name != *name);
         }
         for name in &unset.mcp {
             coastfile.mcp_servers.retain(|m| m.name != *name);
@@ -772,6 +797,9 @@ impl Coastfile {
         // Parse secrets
         let secrets = Self::parse_secrets(raw.secrets)?;
 
+        // Parse build secrets
+        let build_secrets = Self::parse_build_secrets(raw.build_secrets)?;
+
         // Parse inject config
         let inject = match raw.inject {
             Some(raw_inject) => HostInjectConfig {
@@ -786,6 +814,9 @@ impl Coastfile {
 
         // Parse volumes
         let volumes = Self::parse_volumes(raw.volumes)?;
+
+        // Parse host mounts
+        let host_mounts = Self::parse_host_mounts(raw.host_mounts, project_root)?;
 
         // Parse shared services
         let shared_services = Self::parse_shared_services(raw.shared_services)?;
@@ -852,8 +883,10 @@ impl Coastfile {
             healthcheck: raw.healthcheck,
             primary_port,
             secrets,
+            build_secrets,
             inject,
             volumes,
+            host_mounts,
             shared_services,
             setup,
             project_root: resolved_root,
@@ -888,6 +921,8 @@ pub const PRIVATE_PATHS_CONTAINER_DIR: &str = "/coast-private";
 
 /// Container mount path prefix for external worktree directories.
 pub const EXTERNAL_WORKTREE_MOUNT_PREFIX: &str = "/host-external-wt";
+/// Container mount path prefix for external host bind mounts.
+pub const EXTERNAL_HOST_MOUNT_PREFIX: &str = "/host-external-mount";
 
 impl Coastfile {
     /// Returns `true` if a worktree dir path is external (absolute or home-relative).
@@ -930,6 +965,16 @@ impl Coastfile {
     /// Compute the container mount path for an external worktree dir by its index.
     pub fn external_mount_path(index: usize) -> String {
         format!("{EXTERNAL_WORKTREE_MOUNT_PREFIX}/{index}")
+    }
+
+    /// Compute the container mount path for an external host mount by name.
+    pub fn external_host_mount_path(name: &str) -> String {
+        let encoded = name
+            .as_bytes()
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
+        format!("{EXTERNAL_HOST_MOUNT_PREFIX}/{encoded}")
     }
 
     /// Returns `true` if a worktree dir path contains glob metacharacters (`*`, `?`, `[`).

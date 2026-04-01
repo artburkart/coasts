@@ -30,6 +30,15 @@ run = "aws sts get-session-token --output json"
 inject = "env:AWS_SESSION"
 ttl = "1h"
 
+[build_secrets.npm_token]
+extractor = "env"
+var = "NPM_TOKEN"
+
+[build_secrets.github_token]
+id = "gh_token"
+extractor = "file"
+path = "/tmp/github-token"
+
 [inject]
 env = ["NODE_ENV", "DEBUG"]
 files = ["~/.ssh/id_ed25519", "~/.gitconfig"]
@@ -49,6 +58,17 @@ strategy = "isolated"
 snapshot_source = "coast_seed_pg_data"
 service = "db"
 mount = "/var/lib/postgresql/data"
+
+[host_mounts.sibling_repo]
+service = "web"
+source = "../shared-ui"
+mount = "/workspace/vendor/shared-ui"
+
+[host_mounts.external_assets]
+service = "web"
+source = "~/dev/assets"
+mount = "/workspace/vendor/assets"
+read_only = true
 
 [shared_services.postgres]
 image = "postgres:16"
@@ -110,6 +130,31 @@ fn test_parse_secrets() {
 }
 
 #[test]
+fn test_parse_build_secrets() {
+    let root = Path::new("/tmp/project");
+    let coastfile = Coastfile::parse(sample_coastfile(), root).unwrap();
+
+    assert_eq!(coastfile.build_secrets.len(), 2);
+
+    let npm = coastfile
+        .build_secrets
+        .iter()
+        .find(|s| s.name == "npm_token")
+        .unwrap();
+    assert_eq!(npm.id, "npm_token");
+    assert_eq!(npm.extractor, "env");
+    assert_eq!(npm.params.get("var").unwrap(), "NPM_TOKEN");
+
+    let github = coastfile
+        .build_secrets
+        .iter()
+        .find(|s| s.name == "github_token")
+        .unwrap();
+    assert_eq!(github.id, "gh_token");
+    assert_eq!(github.params.get("path").unwrap(), "/tmp/github-token");
+}
+
+#[test]
 fn test_parse_inject() {
     let root = Path::new("/tmp/project");
     let coastfile = Coastfile::parse(sample_coastfile(), root).unwrap();
@@ -143,6 +188,33 @@ fn test_parse_volumes() {
         .unwrap();
     assert_eq!(seed.strategy, VolumeStrategy::Isolated);
     assert_eq!(seed.snapshot_source.as_deref(), Some("coast_seed_pg_data"));
+}
+
+#[test]
+fn test_parse_host_mounts() {
+    let root = Path::new("/tmp/project");
+    let coastfile = Coastfile::parse(sample_coastfile(), root).unwrap();
+
+    assert_eq!(coastfile.host_mounts.len(), 2);
+
+    let sibling = coastfile
+        .host_mounts
+        .iter()
+        .find(|m| m.name == "sibling_repo")
+        .unwrap();
+    assert_eq!(sibling.service, "web");
+    assert_eq!(sibling.source, PathBuf::from("/tmp/project/../shared-ui"));
+    assert_eq!(sibling.mount, PathBuf::from("/workspace/vendor/shared-ui"));
+    assert!(!sibling.read_only);
+
+    let external = coastfile
+        .host_mounts
+        .iter()
+        .find(|m| m.name == "external_assets")
+        .unwrap();
+    assert_eq!(external.service, "web");
+    assert_eq!(external.mount, PathBuf::from("/workspace/vendor/assets"));
+    assert!(external.read_only);
 }
 
 #[test]
@@ -377,6 +449,49 @@ mount = "/data"
     assert!(result.is_err());
     let err = result.unwrap_err().to_string();
     assert!(err.contains("snapshot_source is only valid with strategy 'isolated'"));
+}
+
+#[test]
+fn test_host_mount_requires_absolute_container_path() {
+    let toml = r#"
+[coast]
+name = "my-app"
+
+[host_mounts.bad]
+service = "web"
+source = "../shared"
+mount = "relative/path"
+"#;
+    let result = Coastfile::parse(toml, Path::new("/tmp/project"));
+    assert!(result.is_err());
+    assert!(result
+        .unwrap_err()
+        .to_string()
+        .contains("must be an absolute container path"));
+}
+
+#[test]
+fn test_host_mount_duplicate_target_rejected() {
+    let toml = r#"
+[coast]
+name = "my-app"
+
+[host_mounts.one]
+service = "web"
+source = "../one"
+mount = "/workspace/vendor/shared"
+
+[host_mounts.two]
+service = "web"
+source = "../two"
+mount = "/workspace/vendor/shared"
+"#;
+    let result = Coastfile::parse(toml, Path::new("/tmp/project"));
+    assert!(result.is_err());
+    assert!(result
+        .unwrap_err()
+        .to_string()
+        .contains("both target service"));
 }
 
 #[test]

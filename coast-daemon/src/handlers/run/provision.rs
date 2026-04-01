@@ -34,11 +34,21 @@ type DindContainerManager =
 struct CoastfileResources {
     pre_allocated_ports: Vec<PreAllocatedPort>,
     volume_mounts: Vec<coast_docker::runtime::VolumeMount>,
+    host_mounts: Vec<ResolvedHostMount>,
+    external_host_mounts: Vec<coast_docker::runtime::BindMount>,
     mcp_servers: Vec<coast_core::types::McpServerConfig>,
     mcp_clients: Vec<coast_core::types::McpClientConnectorConfig>,
     shared_services: Vec<coast_core::types::SharedServiceConfig>,
     shared_service_targets: HashMap<String, String>,
     shared_network: Option<String>,
+}
+
+#[derive(Clone)]
+pub(super) struct ResolvedHostMount {
+    pub(super) service: String,
+    pub(super) source_in_container: String,
+    pub(super) target_in_service: String,
+    pub(super) read_only: bool,
 }
 
 /// Phase 2: Docker provisioning -- create container, load images, start services.
@@ -49,12 +59,12 @@ pub(super) async fn provision_instance(
     state: &AppState,
     progress: &tokio::sync::mpsc::Sender<BuildProgressEvent>,
 ) -> Result<ProvisionResult> {
-    let code_path = resolve_code_path(&req.project, validated.build_id.as_deref());
-
-    let per_instance_image_tags = build_host_images(validated, &code_path, req, progress).await;
-
     let artifact_dir = resolve_artifact_dir(&req.project, validated.build_id.as_deref());
     let coastfile_path = artifact_dir.join("coastfile.toml");
+    let code_path = resolve_code_path(&req.project, validated.build_id.as_deref(), &coastfile_path);
+
+    let per_instance_image_tags =
+        build_host_images(validated, &code_path, &coastfile_path, req, progress).await;
 
     let resources = load_coastfile_resources(&coastfile_path, req, state, progress).await?;
 
@@ -179,6 +189,7 @@ async fn setup_shared_services(ctx: &InstanceConfig<'_>) -> Result<()> {
         &shared_service_hosts,
         ctx.per_instance_image_tags,
         ctx.has_volume_mounts,
+        &ctx.resources.host_mounts,
         ctx.secret_container_paths,
         Some(paths::SHARED_CADDY_PKI_CONTAINER_PATH),
         &ctx.req.project,
@@ -266,7 +277,11 @@ async fn start_services(ctx: &InstanceConfig<'_>) -> Result<()> {
 // Helpers
 // ---------------------------------------------------------------------------
 
-fn resolve_code_path(project: &str, build_id: Option<&str>) -> std::path::PathBuf {
+fn resolve_code_path(
+    project: &str,
+    build_id: Option<&str>,
+    coastfile_path: &std::path::Path,
+) -> std::path::PathBuf {
     let project_dir = paths::project_images_dir(project);
     let manifest_path = build_id
         .map(|bid| project_dir.join(bid).join("manifest.json"))
@@ -281,9 +296,17 @@ fn resolve_code_path(project: &str, build_id: Option<&str>) -> std::path::PathBu
                     .as_str()
                     .map(std::path::PathBuf::from)
             })
+            .or_else(|| {
+                coast_core::coastfile::Coastfile::from_file(coastfile_path)
+                    .ok()
+                    .map(|coastfile| coastfile.project_root)
+            })
             .unwrap_or_else(|| std::env::current_dir().unwrap_or_default())
     } else {
-        std::env::current_dir().unwrap_or_default()
+        coast_core::coastfile::Coastfile::from_file(coastfile_path)
+            .ok()
+            .map(|coastfile| coastfile.project_root)
+            .unwrap_or_else(|| std::env::current_dir().unwrap_or_default())
     }
 }
 
@@ -301,9 +324,60 @@ fn resolve_artifact_dir(project: &str, build_id: Option<&str>) -> std::path::Pat
     }
 }
 
+fn normalize_lexical_path(path: &std::path::Path) -> std::path::PathBuf {
+    let mut normalized = std::path::PathBuf::new();
+
+    for component in path.components() {
+        match component {
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir => {
+                if !normalized.pop() {
+                    normalized.push(component.as_os_str());
+                }
+            }
+            std::path::Component::RootDir | std::path::Component::Prefix(_) => {
+                normalized.push(component.as_os_str());
+            }
+            std::path::Component::Normal(part) => normalized.push(part),
+        }
+    }
+
+    normalized
+}
+
+fn resolve_host_mount_binding(
+    project_root: &std::path::Path,
+    mount: &coast_core::types::HostMountConfig,
+) -> (String, Option<coast_docker::runtime::BindMount>) {
+    let normalized_project_root = normalize_lexical_path(project_root);
+    let normalized_source = normalize_lexical_path(&mount.source);
+
+    if let Ok(relative) = normalized_source.strip_prefix(&normalized_project_root) {
+        let relative = relative.to_string_lossy();
+        let source_in_container = if relative.is_empty() {
+            "/workspace".to_string()
+        } else {
+            format!("/workspace/{relative}")
+        };
+        return (source_in_container, None);
+    }
+
+    let container_path = coast_core::coastfile::Coastfile::external_host_mount_path(&mount.name);
+    (
+        container_path.clone(),
+        Some(coast_docker::runtime::BindMount {
+            host_path: mount.source.clone(),
+            container_path,
+            read_only: mount.read_only,
+            propagation: None,
+        }),
+    )
+}
+
 async fn build_host_images(
     validated: &ValidatedRun,
     code_path: &std::path::Path,
+    coastfile_path: &std::path::Path,
     req: &RunRequest,
     progress: &tokio::sync::mpsc::Sender<BuildProgressEvent>,
 ) -> Vec<(String, String)> {
@@ -316,6 +390,7 @@ async fn build_host_images(
     );
     let tags = host_builds::build_per_instance_images_on_host(
         code_path,
+        coastfile_path,
         &req.project,
         &req.name,
         progress,
@@ -334,6 +409,8 @@ async fn load_coastfile_resources(
     let mut result = CoastfileResources {
         pre_allocated_ports: Vec::new(),
         volume_mounts: Vec::new(),
+        host_mounts: Vec::new(),
+        external_host_mounts: Vec::new(),
         mcp_servers: Vec::new(),
         mcp_clients: Vec::new(),
         shared_services: Vec::new(),
@@ -370,6 +447,7 @@ async fn load_coastfile_resources(
         path = %coastfile_path.display(),
         port_count = coastfile.ports.len(),
         volume_count = coastfile.volumes.len(),
+        host_mount_count = coastfile.host_mounts.len(),
         shared_service_count = coastfile.shared_services.len(),
         "loaded artifact Coastfile for run resources"
     );
@@ -391,6 +469,20 @@ async fn load_coastfile_resources(
                 container_path: format!("/coast-volumes/{}", vol_config.name),
                 read_only: false,
             });
+    }
+
+    for mount in &coastfile.host_mounts {
+        let (source_in_container, external_bind) =
+            resolve_host_mount_binding(&coastfile.project_root, mount);
+        result.host_mounts.push(ResolvedHostMount {
+            service: mount.service.clone(),
+            source_in_container,
+            target_in_service: mount.mount.display().to_string(),
+            read_only: mount.read_only,
+        });
+        if let Some(bind_mount) = external_bind {
+            result.external_host_mounts.push(bind_mount);
+        }
     }
 
     copy_snapshot_volumes(&coastfile.volumes, &req.name, &req.project, progress).await?;
@@ -423,6 +515,7 @@ fn rewrite_compose(
     shared_service_hosts: &HashMap<String, String>,
     per_instance_image_tags: &[(String, String)],
     has_volume_mounts: bool,
+    host_mounts: &[ResolvedHostMount],
     secret_container_paths: &[String],
     shared_caddy_pki_container_path: Option<&str>,
     project: &str,
@@ -458,6 +551,7 @@ fn rewrite_compose(
             coastfile_path,
             per_instance_image_tags,
             has_volume_mounts,
+            host_mounts,
             secret_container_paths,
             shared_caddy_pki_container_path,
             project,
@@ -616,6 +710,10 @@ fn build_container_config(
             read_only: false,
             propagation: None,
         });
+    }
+
+    for mount in &ctx.resources.external_host_mounts {
+        config.bind_mounts.push(mount.clone());
     }
 
     for (_name, canonical, dynamic) in pre_allocated_ports {
@@ -1097,10 +1195,32 @@ mod tests {
     }
 
     #[test]
-    fn test_resolve_code_path_no_manifest_uses_cwd() {
-        let path = resolve_code_path("nonexistent-project", None);
+    fn test_resolve_code_path_no_manifest_or_coastfile_uses_cwd() {
+        let path = resolve_code_path(
+            "nonexistent-project",
+            None,
+            std::path::Path::new("/tmp/nonexistent-coastfile.toml"),
+        );
         let cwd = std::env::current_dir().unwrap_or_default();
         assert_eq!(path, cwd, "should fall back to CWD when no manifest exists");
+    }
+
+    #[test]
+    fn test_resolve_code_path_falls_back_to_cached_coastfile_project_root() {
+        let dir = tempfile::tempdir().unwrap();
+        let coastfile_path = dir.path().join("coastfile.toml");
+        std::fs::write(
+            &coastfile_path,
+            r#"
+[coast]
+name = "proj"
+compose = "./docker-compose.yml"
+"#,
+        )
+        .unwrap();
+
+        let path = resolve_code_path("proj", None, &coastfile_path);
+        assert_eq!(path, dir.path());
     }
 
     #[test]
@@ -1224,6 +1344,45 @@ mod tests {
         assert!(!is_retryable_port_publish_error(&error));
     }
 
+    #[test]
+    fn test_resolve_host_mount_binding_treats_sibling_relative_path_as_external() {
+        let mount = coast_core::types::HostMountConfig {
+            name: "sibling".to_string(),
+            service: "web".to_string(),
+            source: std::path::PathBuf::from("/tmp/project/../shared-ui"),
+            mount: std::path::PathBuf::from("/workspace/vendor/shared-ui"),
+            read_only: false,
+        };
+
+        let (source_in_container, external_bind) =
+            resolve_host_mount_binding(std::path::Path::new("/tmp/project"), &mount);
+
+        assert_eq!(
+            source_in_container,
+            coast_core::coastfile::Coastfile::external_host_mount_path("sibling")
+        );
+        let external_bind = external_bind.expect("expected external bind mount");
+        assert_eq!(external_bind.host_path, std::path::PathBuf::from("/tmp/project/../shared-ui"));
+        assert!(!external_bind.read_only);
+    }
+
+    #[test]
+    fn test_resolve_host_mount_binding_keeps_internal_relative_path_in_workspace() {
+        let mount = coast_core::types::HostMountConfig {
+            name: "vendor".to_string(),
+            service: "web".to_string(),
+            source: std::path::PathBuf::from("/tmp/project/vendor/../vendor/shared-ui"),
+            mount: std::path::PathBuf::from("/workspace/vendor/shared-ui"),
+            read_only: true,
+        };
+
+        let (source_in_container, external_bind) =
+            resolve_host_mount_binding(std::path::Path::new("/tmp/project"), &mount);
+
+        assert_eq!(source_in_container, "/workspace/vendor/shared-ui");
+        assert!(external_bind.is_none());
+    }
+
     #[tokio::test]
     async fn test_load_coastfile_resources_reads_ports_and_volume_mounts() {
         let dir = tempfile::tempdir().unwrap();
@@ -1242,6 +1401,17 @@ web = 3000
 strategy = "shared"
 service = "redis"
 mount = "/data"
+
+[host_mounts.sibling]
+service = "web"
+source = "../shared-ui"
+mount = "/workspace/vendor/shared-ui"
+
+[host_mounts.external]
+service = "web"
+source = "/tmp/shared-assets"
+mount = "/workspace/vendor/assets"
+read_only = true
 "#,
         )
         .unwrap();
@@ -1269,6 +1439,33 @@ mount = "/data"
         );
         assert!(!resources.volume_mounts[0].read_only);
 
+        assert_eq!(resources.host_mounts.len(), 2);
+        assert!(resources.host_mounts.iter().any(|mount| {
+            mount.service == "web"
+                && mount.source_in_container
+                    == coast_core::coastfile::Coastfile::external_host_mount_path("sibling")
+                && mount.target_in_service == "/workspace/vendor/shared-ui"
+                && !mount.read_only
+        }));
+        assert!(resources.host_mounts.iter().any(|mount| {
+            mount.service == "web"
+                && mount.target_in_service == "/workspace/vendor/assets"
+                && mount.read_only
+        }));
+        assert_eq!(resources.external_host_mounts.len(), 2);
+        assert!(resources.external_host_mounts.iter().any(|mount| {
+            mount.host_path == std::path::PathBuf::from(dir.path().join("../shared-ui"))
+                && mount.container_path
+                    == coast_core::coastfile::Coastfile::external_host_mount_path("sibling")
+                && !mount.read_only
+        }));
+        assert!(resources.external_host_mounts.iter().any(|mount| {
+            mount.host_path == std::path::PathBuf::from("/tmp/shared-assets")
+                && mount.container_path
+                    == coast_core::coastfile::Coastfile::external_host_mount_path("external")
+                && mount.read_only
+        }));
+
         assert!(resources.mcp_servers.is_empty());
         assert!(resources.mcp_clients.is_empty());
         assert!(resources.shared_services.is_empty());
@@ -1290,6 +1487,8 @@ mount = "/data"
 
         assert!(resources.pre_allocated_ports.is_empty());
         assert!(resources.volume_mounts.is_empty());
+        assert!(resources.host_mounts.is_empty());
+        assert!(resources.external_host_mounts.is_empty());
         assert!(resources.mcp_servers.is_empty());
         assert!(resources.mcp_clients.is_empty());
         assert!(resources.shared_services.is_empty());
@@ -1325,6 +1524,8 @@ snapshot_source = "seed-volume"
 
         assert!(resources.pre_allocated_ports.is_empty());
         assert!(resources.volume_mounts.is_empty());
+        assert!(resources.host_mounts.is_empty());
+        assert!(resources.external_host_mounts.is_empty());
         assert!(resources.mcp_servers.is_empty());
         assert!(resources.mcp_clients.is_empty());
         assert!(resources.shared_services.is_empty());

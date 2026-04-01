@@ -264,6 +264,46 @@ fn write_secrets_section(coastfile: &Coastfile, out: &mut String) {
     }
 }
 
+fn write_build_secrets_section(coastfile: &Coastfile, out: &mut String) {
+    for secret in &coastfile.build_secrets {
+        writeln!(out, "\n[build_secrets.{}]", toml_key(&secret.name)).unwrap();
+        if secret.id != secret.name {
+            writeln!(out, "id = {}", toml_quote(&secret.id)).unwrap();
+        }
+        writeln!(out, "extractor = {}", toml_quote(&secret.extractor)).unwrap();
+        let mut params: Vec<_> = secret.params.iter().collect();
+        params.sort_by_key(|(name, _)| *name);
+        for (name, value) in params {
+            writeln!(out, "{} = {}", toml_key(name), toml_quote(value)).unwrap();
+        }
+        if let Some(ref ttl) = secret.ttl {
+            writeln!(out, "ttl = {}", toml_quote(ttl)).unwrap();
+        }
+    }
+}
+
+fn write_host_mounts_section(coastfile: &Coastfile, out: &mut String) {
+    for mount in &coastfile.host_mounts {
+        writeln!(out, "\n[host_mounts.{}]", toml_key(&mount.name)).unwrap();
+        writeln!(out, "service = {}", toml_quote(&mount.service)).unwrap();
+        writeln!(
+            out,
+            "source = {}",
+            toml_quote(&mount.source.display().to_string())
+        )
+        .unwrap();
+        writeln!(
+            out,
+            "mount = {}",
+            toml_quote(&mount.mount.display().to_string())
+        )
+        .unwrap();
+        if mount.read_only {
+            writeln!(out, "read_only = true").unwrap();
+        }
+    }
+}
+
 fn write_omit_section(coastfile: &Coastfile, out: &mut String) {
     if coastfile.omit.services.is_empty() && coastfile.omit.volumes.is_empty() {
         return;
@@ -453,6 +493,8 @@ impl Coastfile {
         write_shared_services_section(self, &mut out);
         write_volumes_section(self, &mut out);
         write_secrets_section(self, &mut out);
+        write_build_secrets_section(self, &mut out);
+        write_host_mounts_section(self, &mut out);
         write_numeric_map_section("egress", &self.egress, &mut out);
         write_omit_section(self, &mut out);
         write_assign_section(self, &mut out);
@@ -500,11 +542,13 @@ mod tests {
             healthcheck,
             primary_port: None,
             secrets: vec![],
+            build_secrets: vec![],
             inject: HostInjectConfig {
                 env: vec![],
                 files: vec![],
             },
             volumes: vec![],
+            host_mounts: vec![],
             shared_services: vec![],
             setup: SetupConfig::default(),
             project_root: std::env::temp_dir(),

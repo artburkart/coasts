@@ -17,6 +17,8 @@ pub(super) struct ComposeRewriteConfig<'a> {
     pub per_instance_image_tags: &'a [(String, String)],
     /// Whether the instance has coast-managed volume mounts.
     pub has_volume_mounts: bool,
+    /// Additional host bind mounts to inject for specific compose services.
+    pub host_mounts: &'a [super::provision::ResolvedHostMount],
     /// Container paths of secret bind mounts to inject into each service.
     pub secret_container_paths: &'a [String],
     /// Shared Caddy PKI directory mounted into the outer runtime container.
@@ -62,8 +64,9 @@ pub(super) fn rewrite_compose_for_instance(
 /// 3. Remove explicitly omitted volumes from the coastfile
 /// 4. Apply per-instance image overrides (replace `build:` with `image:`)
 /// 5. Apply coast-managed volume overrides
-/// 6. Add extra_hosts entries for host.docker.internal and shared services
-/// 7. Add secret file volume mounts to all remaining services
+/// 6. Add service-scoped host bind mounts
+/// 7. Add extra_hosts entries for host.docker.internal and shared services
+/// 8. Add secret file volume mounts to all remaining services
 pub(super) fn rewrite_compose_yaml(
     compose_content: &str,
     config: &ComposeRewriteConfig<'_>,
@@ -368,10 +371,51 @@ fn add_service_hosts_and_mounts(
             .get_mut(serde_yaml::Value::String(service_name.clone()))
             .and_then(|service| service.as_mapping_mut())
         {
+            changed |= ensure_host_mounts_for_service(service_name, service_definition, config);
             changed |= ensure_extra_hosts(service_definition, config);
             changed |= ensure_secret_mounts(service_definition, config.secret_container_paths);
             changed |= ensure_shared_caddy_pki_mount(service_definition, config);
         }
+    }
+
+    changed
+}
+
+fn ensure_host_mounts_for_service(
+    service_name: &str,
+    service_definition: &mut YamlMapping,
+    config: &ComposeRewriteConfig<'_>,
+) -> bool {
+    let mounts: Vec<_> = config
+        .host_mounts
+        .iter()
+        .filter(|mount| mount.service == service_name)
+        .collect();
+    if mounts.is_empty() {
+        return false;
+    }
+
+    let volumes_key = serde_yaml::Value::String("volumes".into());
+    let volumes_seq = service_definition
+        .entry(volumes_key)
+        .or_insert_with(|| serde_yaml::Value::Sequence(vec![]));
+    let Some(sequence) = volumes_seq.as_sequence_mut() else {
+        return false;
+    };
+
+    let mut changed = false;
+    for mount in mounts {
+        sequence.retain(|volume| {
+            volume_mount_target(volume)
+                .map(|target| target != mount.target_in_service)
+                .unwrap_or(true)
+        });
+        let mode = if mount.read_only { ":ro" } else { "" };
+        sequence.push(serde_yaml::Value::String(format!(
+            "{}:{}{}",
+            mount.source_in_container, mount.target_in_service, mode
+        )));
+        changed = true;
     }
 
     changed
@@ -662,6 +706,7 @@ mod tests {
             coastfile_path: Path::new("/nonexistent-coastfile"),
             per_instance_image_tags: &[],
             has_volume_mounts: false,
+            host_mounts: &[],
             secret_container_paths: &[],
             shared_caddy_pki_container_path: None,
             project: "test-proj",
@@ -918,6 +963,49 @@ services:
             .unwrap();
         let host_strs: Vec<&str> = hosts.iter().filter_map(|v| v.as_str()).collect();
         assert!(host_strs.contains(&"postgres:172.17.255.254"));
+    }
+
+    #[test]
+    fn test_host_mounts_replace_existing_target_for_matching_service() {
+        let compose = r#"
+services:
+  web:
+    image: nginx
+    volumes:
+      - ./old:/workspace/vendor/shared-ui
+  api:
+    image: node:20
+"#;
+        let host_mounts = vec![super::super::provision::ResolvedHostMount {
+            service: "web".to_string(),
+            source_in_container: "/host-external-mount/7369626c696e67".to_string(),
+            target_in_service: "/workspace/vendor/shared-ui".to_string(),
+            read_only: true,
+        }];
+        let config = ComposeRewriteConfig {
+            host_mounts: &host_mounts,
+            ..base_config()
+        };
+        let result = rewrite_compose_yaml(compose, &config).unwrap();
+        let yaml = parse_output(&result);
+
+        let web_volumes = yaml
+            .get("services")
+            .and_then(|s| s.get("web"))
+            .and_then(|s| s.get("volumes"))
+            .and_then(|v| v.as_sequence())
+            .unwrap();
+        let volume_strs: Vec<&str> = web_volumes.iter().filter_map(|v| v.as_str()).collect();
+        assert_eq!(
+            volume_strs,
+            vec!["/host-external-mount/7369626c696e67:/workspace/vendor/shared-ui:ro"]
+        );
+
+        let api_volumes = yaml
+            .get("services")
+            .and_then(|s| s.get("api"))
+            .and_then(|s| s.get("volumes"));
+        assert!(api_volumes.is_none());
     }
 
     // --- rewrite_compose_yaml: secret volume mounts ---

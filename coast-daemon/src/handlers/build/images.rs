@@ -13,6 +13,7 @@ use crate::server::AppState;
 use super::emit;
 use super::plan::{BuildPlan, ComposeAnalysis};
 use super::utils::pull_and_cache_image;
+use crate::handlers::build_secrets;
 
 #[derive(Debug, Default, PartialEq, Eq)]
 pub(super) struct ImageBuildOutput {
@@ -29,6 +30,7 @@ struct ImageBuildContext<'a> {
     docker: Option<&'a bollard::Docker>,
     cache_dir: &'a Path,
     compose_dir: &'a Path,
+    coastfile: &'a Coastfile,
     progress: &'a tokio::sync::mpsc::Sender<BuildProgressEvent>,
     plan: &'a BuildPlan,
 }
@@ -69,6 +71,7 @@ pub(super) async fn cache_images(
         docker: state.docker.as_ref(),
         cache_dir: &cache_dir,
         compose_dir,
+        coastfile: _coastfile,
         progress,
         plan,
     };
@@ -96,10 +99,13 @@ async fn cache_built_images(
             tag = %directive.coast_image_tag,
             "building image from compose build: directive"
         );
+        let materialized_secrets =
+            build_secrets::materialize_build_secrets(context.coastfile, directive)?;
         match coast_docker::compose_build::build_and_cache_image(
             directive,
             context.compose_dir,
             context.cache_dir,
+            &materialized_secrets.secrets,
         )
         .await
         {

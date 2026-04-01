@@ -230,6 +230,43 @@ fn test_volume_config_isolated_with_snapshot_source() {
 }
 
 #[test]
+fn test_host_mount_config_serialization() {
+    let config = HostMountConfig {
+        name: "sibling_ui".to_string(),
+        service: "web".to_string(),
+        source: PathBuf::from("/tmp/sibling-ui"),
+        mount: PathBuf::from("/workspace/vendor/sibling-ui"),
+        read_only: true,
+    };
+
+    let json = serde_json::to_string(&config).unwrap();
+    let deserialized: HostMountConfig = serde_json::from_str(&json).unwrap();
+    assert_eq!(deserialized.service, "web");
+    assert_eq!(deserialized.source, PathBuf::from("/tmp/sibling-ui"));
+    assert!(deserialized.read_only);
+}
+
+#[test]
+fn test_build_secret_config_serialization() {
+    let mut params = HashMap::new();
+    params.insert("name".to_string(), "NPM_TOKEN".to_string());
+
+    let config = BuildSecretConfig {
+        name: "npm_token".to_string(),
+        id: "npm_token".to_string(),
+        extractor: "env".to_string(),
+        params,
+        ttl: Some("1h".to_string()),
+    };
+
+    let json = serde_json::to_string(&config).unwrap();
+    let deserialized: BuildSecretConfig = serde_json::from_str(&json).unwrap();
+    assert_eq!(deserialized.extractor, "env");
+    assert_eq!(deserialized.id, "npm_token");
+    assert_eq!(deserialized.ttl.as_deref(), Some("1h"));
+}
+
+#[test]
 fn test_shared_service_config_serialization() {
     let mut env = HashMap::new();
     env.insert("POSTGRES_PASSWORD".to_string(), "dev".to_string());
