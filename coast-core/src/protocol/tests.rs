@@ -24,6 +24,7 @@ fn test_build_request_roundtrip() {
     roundtrip_request(Request::Build(BuildRequest {
         coastfile_path: PathBuf::from("/home/user/Coastfile"),
         refresh: true,
+        env_overrides: std::collections::HashMap::new(),
     }));
 }
 

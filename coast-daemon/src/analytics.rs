@@ -520,6 +520,7 @@ mod tests {
             Request::Build(BuildRequest {
                 coastfile_path: std::path::PathBuf::new(),
                 refresh: false,
+                env_overrides: std::collections::HashMap::new(),
             }),
             Request::RerunExtractors(RerunExtractorsRequest {
                 project: String::new(),

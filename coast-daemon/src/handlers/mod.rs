@@ -13,6 +13,8 @@ use coast_core::types::InstanceStatus;
 
 use crate::server::AppState;
 
+pub(crate) mod build_secrets;
+
 /// Resolve the path to the cached Coastfile for a given project and optional build ID.
 ///
 /// Build artifacts are stored at `~/.coast/images/{project}/{build_id}/coastfile.toml`.

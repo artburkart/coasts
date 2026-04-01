@@ -2,10 +2,12 @@ use std::path::{Path, PathBuf};
 
 use tracing::info;
 
+use coast_core::coastfile::Coastfile;
 use coast_core::protocol::BuildProgressEvent;
 use coast_docker::compose_build::ComposeBuildDirective;
 
 use super::emit;
+use crate::handlers::build_secrets;
 
 /// Build per-instance Docker images on the HOST daemon for services with `build:` directives.
 ///
@@ -14,15 +16,24 @@ use super::emit;
 /// Uses the host's Docker layer cache from `coast build`, making rebuilds fast.
 pub(super) async fn build_per_instance_images_on_host(
     code_path: &Path,
+    coastfile_path: &Path,
     project: &str,
     instance_name: &str,
     progress: &tokio::sync::mpsc::Sender<BuildProgressEvent>,
 ) -> Vec<(String, String)> {
     let mut image_tags = Vec::new();
+    let coastfile = Coastfile::from_file(coastfile_path).ok();
 
     for directive in load_host_build_directives(code_path, project) {
-        if let Some(image_tag) =
-            build_image_on_host(&directive, code_path, project, instance_name, progress).await
+        if let Some(image_tag) = build_image_on_host(
+            &directive,
+            code_path,
+            coastfile.as_ref(),
+            project,
+            instance_name,
+            progress,
+        )
+        .await
         {
             image_tags.push(image_tag);
         }
@@ -59,12 +70,13 @@ fn find_workspace_compose_path(code_path: &Path) -> Option<PathBuf> {
 async fn build_image_on_host(
     directive: &ComposeBuildDirective,
     code_path: &Path,
+    coastfile: Option<&Coastfile>,
     project: &str,
     instance_name: &str,
     progress: &tokio::sync::mpsc::Sender<BuildProgressEvent>,
 ) -> Option<(String, String)> {
-    let (instance_tag, command_args) =
-        host_build_command_args(directive, code_path, project, instance_name);
+    let (instance_tag, command_args, _materialized_secrets) =
+        host_build_command_args(directive, code_path, coastfile, project, instance_name).ok()?;
 
     info!(
         service = %directive.service_name,
@@ -88,9 +100,14 @@ async fn build_image_on_host(
 fn host_build_command_args(
     directive: &ComposeBuildDirective,
     code_path: &Path,
+    coastfile: Option<&Coastfile>,
     project: &str,
     instance_name: &str,
-) -> (String, Vec<String>) {
+) -> coast_core::error::Result<(
+    String,
+    Vec<String>,
+    Option<build_secrets::MaterializedBuildSecrets>,
+)> {
     let instance_tag = coast_docker::compose_build::coast_built_instance_image_tag(
         project,
         &directive.service_name,
@@ -98,8 +115,25 @@ fn host_build_command_args(
     );
     let mut build_directive = directive.clone();
     build_directive.coast_image_tag = instance_tag.clone();
-    let command_args = coast_docker::compose_build::docker_build_cmd(&build_directive, code_path);
-    (instance_tag, command_args)
+    let materialized_secrets = match coastfile {
+        Some(coastfile) => Some(build_secrets::materialize_build_secrets(
+            coastfile,
+            &build_directive,
+        )?),
+        None if directive.secrets.is_empty() => None,
+        None => {
+            return Err(coast_core::error::CoastError::coastfile(
+                "build secrets were requested but no Coastfile artifact was available",
+            ));
+        }
+    };
+    let secret_refs = materialized_secrets
+        .as_ref()
+        .map(|materialized| materialized.secrets.as_slice())
+        .unwrap_or(&[]);
+    let command_args =
+        coast_docker::compose_build::docker_build_cmd(&build_directive, code_path, secret_refs);
+    Ok((instance_tag, command_args, materialized_secrets))
 }
 
 fn handle_host_build_result(

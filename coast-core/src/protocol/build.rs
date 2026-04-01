@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
@@ -11,6 +12,9 @@ pub struct BuildRequest {
     pub coastfile_path: PathBuf,
     /// Whether to refresh (re-extract secrets, re-pull images).
     pub refresh: bool,
+    /// Environment overrides forwarded from the CLI process for build-time extractors.
+    #[serde(default)]
+    pub env_overrides: HashMap<String, String>,
 }
 
 /// Request to re-run secret extractors using the cached build Coastfile.

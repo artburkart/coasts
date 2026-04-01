@@ -387,6 +387,7 @@ pub async fn execute(args: &BuildArgs) -> Result<()> {
     let request = Request::Build(BuildRequest {
         coastfile_path,
         refresh: args.refresh,
+        env_overrides: std::env::vars().collect(),
     });
 
     let verbosity = if args.silent {

@@ -10,6 +10,9 @@ mod plan;
 mod secrets;
 mod utils;
 
+use std::collections::HashMap;
+use std::ffi::OsString;
+use std::sync::{Arc, OnceLock};
 use tracing::info;
 
 use coast_core::artifact::coast_home;
@@ -18,6 +21,50 @@ use coast_core::error::{CoastError, Result};
 use coast_core::protocol::{BuildProgressEvent, BuildRequest, BuildResponse};
 
 use crate::server::AppState;
+
+fn build_env_lock() -> &'static Arc<tokio::sync::Mutex<()>> {
+    static LOCK: OnceLock<Arc<tokio::sync::Mutex<()>>> = OnceLock::new();
+    LOCK.get_or_init(|| Arc::new(tokio::sync::Mutex::new(())))
+}
+
+struct BuildEnvGuard {
+    _guard: tokio::sync::OwnedMutexGuard<()>,
+    previous_values: Vec<(String, Option<OsString>)>,
+}
+
+impl BuildEnvGuard {
+    async fn apply(overrides: &HashMap<String, String>) -> Self {
+        let guard = build_env_lock().clone().lock_owned().await;
+        let mut previous_values = Vec::with_capacity(overrides.len());
+
+        for (key, value) in overrides {
+            previous_values.push((key.clone(), std::env::var_os(key)));
+            unsafe {
+                std::env::set_var(key, value);
+            }
+        }
+
+        Self {
+            _guard: guard,
+            previous_values,
+        }
+    }
+}
+
+impl Drop for BuildEnvGuard {
+    fn drop(&mut self) {
+        for (key, previous) in self.previous_values.iter().rev() {
+            match previous {
+                Some(value) => unsafe {
+                    std::env::set_var(key, value);
+                },
+                None => unsafe {
+                    std::env::remove_var(key);
+                },
+            }
+        }
+    }
+}
 
 /// Send a progress event, ignoring send errors (CLI may have disconnected).
 fn emit(tx: &tokio::sync::mpsc::Sender<BuildProgressEvent>, event: BuildProgressEvent) {
@@ -44,6 +91,7 @@ pub async fn handle(
         "handling build request"
     );
 
+    let _env_guard = BuildEnvGuard::apply(&req.env_overrides).await;
     let coastfile = Coastfile::from_file(&req.coastfile_path)?;
     let home = coast_home()?;
     std::fs::create_dir_all(&home).map_err(|error| CoastError::Io {
@@ -233,6 +281,7 @@ mod tests {
         let req = BuildRequest {
             coastfile_path: PathBuf::from("/tmp/nonexistent/Coastfile"),
             refresh: false,
+            env_overrides: std::collections::HashMap::new(),
         };
         let result = handle(req, &state, test_progress_sender()).await;
         assert!(result.is_err());
@@ -257,6 +306,7 @@ compose = "./docker-compose.yml"
         let req = BuildRequest {
             coastfile_path,
             refresh: false,
+            env_overrides: std::collections::HashMap::new(),
         };
         let resp = handle(req, &state, test_progress_sender()).await.unwrap();
         assert_eq!(resp.project, "test-build");
@@ -289,6 +339,7 @@ compose = "./docker-compose.yml"
         let req = BuildRequest {
             coastfile_path,
             refresh: false,
+            env_overrides: std::collections::HashMap::new(),
         };
         let resp = handle(req, &state, test_progress_sender()).await.unwrap();
 
@@ -322,6 +373,7 @@ mount = "/var/lib/postgresql/data"
         let req = BuildRequest {
             coastfile_path,
             refresh: false,
+            env_overrides: std::collections::HashMap::new(),
         };
         let result = handle(req, &state, test_progress_sender()).await.unwrap();
         assert!(!result.warnings.is_empty());
@@ -350,6 +402,7 @@ files = ["/tmp/nonexistent_coast_test_file_12345"]
         let req = BuildRequest {
             coastfile_path,
             refresh: false,
+            env_overrides: std::collections::HashMap::new(),
         };
         let result = handle(req, &state, test_progress_sender()).await.unwrap();
         assert!(result
@@ -384,6 +437,7 @@ compose = "./docker-compose.yml"
         let req = BuildRequest {
             coastfile_path,
             refresh: false,
+            env_overrides: std::collections::HashMap::new(),
         };
         let result = handle(req, &state, test_progress_sender()).await.unwrap();
 
@@ -423,6 +477,7 @@ run = ["echo hello"]
         let req = BuildRequest {
             coastfile_path,
             refresh: false,
+            env_overrides: std::collections::HashMap::new(),
         };
         let result = handle(req, &state, test_progress_sender()).await;
         if let Ok(resp) = result {
@@ -450,6 +505,7 @@ compose = "./docker-compose.yml"
         let req = BuildRequest {
             coastfile_path,
             refresh: false,
+            env_overrides: std::collections::HashMap::new(),
         };
         let result = handle(req, &state, test_progress_sender()).await.unwrap();
         assert!(result.coast_image.is_none());
@@ -474,6 +530,7 @@ compose = "./docker-compose.yml"
         let req = BuildRequest {
             coastfile_path,
             refresh: false,
+            env_overrides: std::collections::HashMap::new(),
         };
         let result = handle(req, &state, test_progress_sender()).await.unwrap();
 
@@ -513,6 +570,7 @@ compose = "./docker-compose.yml"
         let req = BuildRequest {
             coastfile_path,
             refresh: false,
+            env_overrides: std::collections::HashMap::new(),
         };
         let (tx, mut rx) = tokio::sync::mpsc::channel(64);
         let _result = handle(req, &state, tx).await.unwrap();
@@ -622,6 +680,7 @@ ttl = "1h"
         let req = BuildRequest {
             coastfile_path,
             refresh: false,
+            env_overrides: std::collections::HashMap::new(),
         };
         let (tx, mut rx) = tokio::sync::mpsc::channel(64);
         let result = handle(req, &state, tx).await.unwrap();
@@ -657,6 +716,50 @@ ttl = "1h"
     }
 
     #[tokio::test]
+    async fn test_build_uses_env_overrides_for_env_secret_extraction() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = tempfile::tempdir().unwrap();
+        let _home_guard = set_test_home(home.path());
+        let var_name = "COAST_BUILD_ENV_OVERRIDE_TEST";
+        unsafe {
+            std::env::remove_var(var_name);
+        }
+        let coastfile_path = write_project_files(
+            dir.path(),
+            &format!(
+                r#"
+[coast]
+name = "test-env-overrides"
+compose = "./docker-compose.yml"
+
+[secrets.api_key]
+extractor = "env"
+var = "{var_name}"
+inject = "env:API_KEY"
+"#
+            ),
+            "version: '3'\nservices: {}",
+        );
+
+        let state = test_state();
+        let req = BuildRequest {
+            coastfile_path,
+            refresh: false,
+            env_overrides: std::collections::HashMap::from([(
+                var_name.to_string(),
+                "forwarded-secret".to_string(),
+            )]),
+        };
+
+        let result = handle(req, &state, test_progress_sender()).await.unwrap();
+        assert_eq!(result.secrets_extracted, 1);
+
+        unsafe {
+            std::env::remove_var(var_name);
+        }
+    }
+
+    #[tokio::test]
     async fn test_build_without_docker_skips_pulling_image_refs() {
         let dir = tempfile::tempdir().unwrap();
         let home = tempfile::tempdir().unwrap();
@@ -678,6 +781,7 @@ compose = "./docker-compose.yml"
         let req = BuildRequest {
             coastfile_path,
             refresh: false,
+            env_overrides: std::collections::HashMap::new(),
         };
         let (tx, mut rx) = tokio::sync::mpsc::channel(64);
         let result = handle(req, &state, tx).await.unwrap();
@@ -753,6 +857,7 @@ volumes:
         let req = BuildRequest {
             coastfile_path,
             refresh: false,
+            env_overrides: std::collections::HashMap::new(),
         };
         let result = handle(req, &state, test_progress_sender()).await.unwrap();
 
