@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use coast_core::coastfile::Coastfile;
 use coast_core::error::{CoastError, Result};
@@ -82,6 +82,6 @@ fn extract_build_secret_value(
         })
 }
 
-fn path_to_string(path: &PathBuf) -> String {
+fn path_to_string(path: &Path) -> String {
     path.to_string_lossy().to_string()
 }

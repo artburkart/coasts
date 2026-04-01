@@ -161,6 +161,20 @@ enum ContainerCreateAttempt {
     Retry(CoastError),
 }
 
+struct RewriteComposeContext<'a> {
+    artifact_dir: &'a std::path::Path,
+    code_path: &'a std::path::Path,
+    coastfile_path: &'a std::path::Path,
+    shared_service_hosts: &'a HashMap<String, String>,
+    per_instance_image_tags: &'a [(String, String)],
+    has_volume_mounts: bool,
+    host_mounts: &'a [ResolvedHostMount],
+    secret_container_paths: &'a [String],
+    shared_caddy_pki_container_path: Option<&'a str>,
+    project: &'a str,
+    instance_name: &'a str,
+}
+
 async fn setup_shared_services(ctx: &InstanceConfig<'_>) -> Result<()> {
     info!(instance = %ctx.req.name, "provision: setting up shared services");
     let shared_service_routing = if ctx.resources.shared_services.is_empty() {
@@ -182,19 +196,19 @@ async fn setup_shared_services(ctx: &InstanceConfig<'_>) -> Result<()> {
         super::super::shared_service_routing::SharedServiceRoutingPlan::host_map,
     );
 
-    rewrite_compose(
-        ctx.artifact_dir,
-        ctx.code_path,
-        ctx.coastfile_path,
-        &shared_service_hosts,
-        ctx.per_instance_image_tags,
-        ctx.has_volume_mounts,
-        &ctx.resources.host_mounts,
-        ctx.secret_container_paths,
-        Some(paths::SHARED_CADDY_PKI_CONTAINER_PATH),
-        &ctx.req.project,
-        &ctx.req.name,
-    );
+    rewrite_compose(&RewriteComposeContext {
+        artifact_dir: ctx.artifact_dir,
+        code_path: ctx.code_path,
+        coastfile_path: ctx.coastfile_path,
+        shared_service_hosts: &shared_service_hosts,
+        per_instance_image_tags: ctx.per_instance_image_tags,
+        has_volume_mounts: ctx.has_volume_mounts,
+        host_mounts: &ctx.resources.host_mounts,
+        secret_container_paths: ctx.secret_container_paths,
+        shared_caddy_pki_container_path: Some(paths::SHARED_CADDY_PKI_CONTAINER_PATH),
+        project: &ctx.req.project,
+        instance_name: &ctx.req.name,
+    });
 
     if let Some(ref routing) = shared_service_routing {
         ensure_shared_service_proxies(ctx.docker, ctx.container_id, routing).await?;
@@ -508,24 +522,12 @@ async fn load_coastfile_resources(
     Ok(result)
 }
 
-fn rewrite_compose(
-    artifact_dir: &std::path::Path,
-    code_path: &std::path::Path,
-    coastfile_path: &std::path::Path,
-    shared_service_hosts: &HashMap<String, String>,
-    per_instance_image_tags: &[(String, String)],
-    has_volume_mounts: bool,
-    host_mounts: &[ResolvedHostMount],
-    secret_container_paths: &[String],
-    shared_caddy_pki_container_path: Option<&str>,
-    project: &str,
-    instance_name: &str,
-) {
-    let compose_path = artifact_dir.join("compose.yml");
+fn rewrite_compose(ctx: &RewriteComposeContext<'_>) {
+    let compose_path = ctx.artifact_dir.join("compose.yml");
     let compose_content = if compose_path.exists() {
         std::fs::read_to_string(&compose_path).ok()
     } else {
-        let ws_compose = code_path.join("docker-compose.yml");
+        let ws_compose = ctx.code_path.join("docker-compose.yml");
         std::fs::read_to_string(&ws_compose).ok()
     };
 
@@ -533,7 +535,7 @@ fn rewrite_compose(
         return;
     };
 
-    let assign_cfg = coast_core::coastfile::Coastfile::from_file(coastfile_path)
+    let assign_cfg = coast_core::coastfile::Coastfile::from_file(ctx.coastfile_path)
         .map(|cf| cf.assign)
         .unwrap_or_default();
     let hot_svcs: Vec<String> = assign_cfg
@@ -547,15 +549,15 @@ fn rewrite_compose(
     compose_rewrite::rewrite_compose_for_instance(
         content,
         &compose_rewrite::ComposeRewriteConfig {
-            shared_service_hosts,
-            coastfile_path,
-            per_instance_image_tags,
-            has_volume_mounts,
-            host_mounts,
-            secret_container_paths,
-            shared_caddy_pki_container_path,
-            project,
-            instance_name,
+            shared_service_hosts: ctx.shared_service_hosts,
+            coastfile_path: ctx.coastfile_path,
+            per_instance_image_tags: ctx.per_instance_image_tags,
+            has_volume_mounts: ctx.has_volume_mounts,
+            host_mounts: ctx.host_mounts,
+            secret_container_paths: ctx.secret_container_paths,
+            shared_caddy_pki_container_path: ctx.shared_caddy_pki_container_path,
+            project: ctx.project,
+            instance_name: ctx.instance_name,
             hot_services: &hot_svcs,
             default_hot,
         },
@@ -1362,7 +1364,10 @@ compose = "./docker-compose.yml"
             coast_core::coastfile::Coastfile::external_host_mount_path("sibling")
         );
         let external_bind = external_bind.expect("expected external bind mount");
-        assert_eq!(external_bind.host_path, std::path::PathBuf::from("/tmp/project/../shared-ui"));
+        assert_eq!(
+            external_bind.host_path,
+            std::path::PathBuf::from("/tmp/project/../shared-ui")
+        );
         assert!(!external_bind.read_only);
     }
 

@@ -10,10 +10,10 @@ mod plan;
 mod secrets;
 mod utils;
 
-use tracing::info;
 use std::collections::HashMap;
 use std::ffi::OsString;
 use std::sync::{Arc, OnceLock};
+use tracing::info;
 
 use coast_core::artifact::coast_home;
 use coast_core::coastfile::Coastfile;
